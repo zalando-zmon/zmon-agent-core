@@ -1,1 +1,2 @@
 pykube==0.12.0
+stups-tokens==1.0.18

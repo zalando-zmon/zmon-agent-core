@@ -17,6 +17,10 @@ SERVICE_TYPE = 'gcp_service'
 NODE_TYPE = 'gcp_node'
 
 
+INFRASTRUCTURE_ACCOUNT = 'gcp:zalando-zmon'
+REGION = 'europe-west1-c'
+
+
 def get_clients(service_acc_path, zmon_url, disable_oauth2=False, verify=True):
     """Return Pykube and ZMon client instances as a tuple."""
 
@@ -29,13 +33,14 @@ def get_clients(service_acc_path, zmon_url, disable_oauth2=False, verify=True):
     zmon_user = os.getenv('ZMON_USER')
     zmon_password = os.getenv('ZMON_PASSWORD')
 
-    config = pykube.KubeConfig.from_service_account(path=service_acc_path)
+    # config = pykube.KubeConfig.from_service_account(path=service_acc_path)
+    config = pykube.KubeConfig.from_file(service_acc_path)
 
     return (pykube.HTTPClient(config),
             ZMon(zmon_url, token=zmon_token, username=zmon_user, password=zmon_password, verify=verify))
 
 
-def get_cluster_pods(kube_client, namespace, infrastructure_account, region):
+def get_cluster_pods(kube_client, namespace, infrastructure_account=INFRASTRUCTURE_ACCOUNT, region=REGION):
     pods = pykube.Pod.objects(kube_client).filter(namespace=namespace)
 
     entities = []
@@ -60,7 +65,7 @@ def get_cluster_pods(kube_client, namespace, infrastructure_account, region):
             'pod_host_ip': obj['status']['hostIP'],
         }
 
-        for label, val in pod.obj['labels'].items():
+        for label, val in pod.obj['metadata']['labels'].items():
             entity['labels.{}'.format(label)] = val
 
         entities.append(entity)
@@ -68,7 +73,7 @@ def get_cluster_pods(kube_client, namespace, infrastructure_account, region):
     return entities
 
 
-def get_cluster_services(kube_client, namespace, infrastructure_account, region):
+def get_cluster_services(kube_client, namespace, infrastructure_account=INFRASTRUCTURE_ACCOUNT, region=REGION):
     services = pykube.Service.objects(kube_client).filter(namespace=namespace)
 
     entities = []
@@ -129,8 +134,8 @@ def add_new_entities(all_current_entities, current_ids, existing_ids, zmon_clien
             for entity in new_entities:
                 logger.info(
                     'Adding new {} entity with ID: {}'.format(entity['type'], entity['id']))
-                resp = zmon_client.add_entity(entity)
-                logger.info('ZMon response ... {}'.format(resp.status_code))
+                # resp = zmon_client.add_entity(entity)
+                # logger.info('ZMon response ... {}'.format(resp.status_code))
         except:
             logger.exception('Failed to add entity!')
 
@@ -162,13 +167,14 @@ def main():
         logger.warning('ZMon GCP agent will skip SSL verification!')
         verify = False
 
-    kube_client, zmon_client = get_clients(verify=verify)
+    kube_client, zmon_client = get_clients(
+        args.service_acc_path, args.entityservice, disable_oauth2=args.skip_ssl, verify=verify)
 
     # 1) Get cluster pods
     pod_entities = get_cluster_pods(kube_client, args.namespace)
 
     # 2) Get cluster services
-    service_entities = get_cluster_services(kube_client)
+    service_entities = get_cluster_services(kube_client, args.namespace)
 
     # 3) Get cluster nodes
     node_entities = get_cluster_nodes(kube_client)
