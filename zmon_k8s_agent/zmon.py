@@ -4,7 +4,7 @@ import logging
 
 import requests
 
-from zmon_gcp_agent.common import get_user_agent
+from zmon_k8s_agent.common import get_user_agent
 
 
 logger = logging.getLogger(__name__)

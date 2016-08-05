@@ -6,18 +6,18 @@ import json
 import tokens
 import pykube
 
-from zmon_gcp_agent.zmon import ZMon
+from zmon_k8s_agent.zmon import ZMon
 
-AGENT_TYPE = 'zmon-gcp-agent'
+AGENT_TYPE = 'zmon-k8s-agent'
 
 logger = logging.getLogger(__name__)
 
-POD_TYPE = 'gcp_pod'
-SERVICE_TYPE = 'gcp_service'
-NODE_TYPE = 'gcp_node'
+POD_TYPE = 'k8s_pod'
+SERVICE_TYPE = 'k8s_service'
+NODE_TYPE = 'k8s_node'
 
 
-INFRASTRUCTURE_ACCOUNT = 'gcp:zalando-zmon'
+INFRASTRUCTURE_ACCOUNT = 'k8s:zalando-zmon'
 REGION = 'europe-west1-c'
 
 
@@ -52,7 +52,7 @@ def get_cluster_pods(kube_client, namespace, infrastructure_account=INFRASTRUCTU
         obj = pod.obj
 
         entity = {
-            'id': 'gcp-pod-{}-{}[{}:{}]'.format(pod.name, obj['metadata']['uid'], infrastructure_account, region),
+            'id': 'k8s-pod-{}-{}[{}:{}]'.format(pod.name, obj['metadata']['uid'], infrastructure_account, region),
             'type': POD_TYPE,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
@@ -82,7 +82,7 @@ def get_cluster_services(kube_client, namespace, infrastructure_account=INFRASTR
         obj = service.obj
 
         entity = {
-            'id': 'gcp-pod-{}-{}[{}:{}]'.format(service.name, obj['metadata']['uid'], infrastructure_account, region),
+            'id': 'k8s-pod-{}-{}[{}:{}]'.format(service.name, obj['metadata']['uid'], infrastructure_account, region),
             'type': SERVICE_TYPE,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
@@ -143,9 +143,9 @@ def add_new_entities(all_current_entities, current_ids, existing_ids, zmon_clien
 
 
 def main():
-    argp = argparse.ArgumentParser(description='ZMon GCP Agent')
-    argp.add_argument('-s', '--service-account-path', dest='service_acc_path', help='GCP service account path.')
-    argp.add_argument('-n', '--namespace', dest='namespace', help='GCP cluster namespace.')
+    argp = argparse.ArgumentParser(description='ZMon K8S Agent')
+    argp.add_argument('-s', '--service-account-path', dest='service_acc_path', help='K8S service account path.')
+    argp.add_argument('-n', '--namespace', dest='namespace', help='K8S cluster namespace.')
     argp.add_argument('-e', '--entity-service', dest='entityservice', help='ZMon REST endpoint.')
     argp.add_argument('-j', '--json', dest='json', action='store_true', help='Print JSON output only.', default=False)
     argp.add_argument('--no-oauth2', dest='disable_oauth2', action='store_true', default=False)
@@ -164,7 +164,7 @@ def main():
 
     verify = True
     if args.skip_ssl:
-        logger.warning('ZMon GCP agent will skip SSL verification!')
+        logger.warning('ZMON K8S agent will skip SSL verification!')
         verify = False
 
     kube_client, zmon_client = get_clients(

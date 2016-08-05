@@ -1,5 +1,5 @@
 ==============
-ZMON GCP Agent
+ZMON K8S Agent
 ==============
 
-Use GCP Kubernetes (GKE) API to discover Pods, Services and Nodes as ZMON entities.
+Use K8S Kubernetes (GKE) API to discover Pods, Services and Nodes as ZMON entities.
