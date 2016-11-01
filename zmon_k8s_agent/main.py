@@ -3,10 +3,12 @@ import os
 import logging
 import json
 
+import requests
 import tokens
 import pykube
 
-from zmon_k8s_agent.zmon import ZMon
+from zmon_cli.client import Zmon, compare_entities
+
 
 AGENT_TYPE = 'zmon-k8s-agent'
 
@@ -20,27 +22,29 @@ NODE_TYPE = 'k8s_node'
 INFRASTRUCTURE_ACCOUNT = 'k8s:zalando-zmon'
 REGION = 'europe-west1-c'
 
+DEFAULT_SERVICE_ACC = '/var/run/secrets/kubernetes.io/serviceaccount'
 
-def get_clients(service_acc_path, zmon_url, disable_oauth2=False, verify=True):
+
+def get_clients(service_acc_path, zmon_url, verify=True):
     """Return Pykube and ZMon client instances as a tuple."""
 
     # Get token if set as ENV variable. This is useful in development.
     zmon_token = os.getenv('ZMON_AGENT_TOKEN')
 
-    if not disable_oauth2 and not zmon_token:
+    if not zmon_token:
         zmon_token = tokens.get('uid')
 
-    zmon_user = os.getenv('ZMON_USER')
-    zmon_password = os.getenv('ZMON_PASSWORD')
-
-    # config = pykube.KubeConfig.from_service_account(path=service_acc_path)
-    config = pykube.KubeConfig.from_file(service_acc_path)
+    if service_acc_path:
+        config = pykube.KubeConfig.from_file(service_acc_path)
+    else:
+        # Assuming running on K8S cluster with default serviceaccount available!
+        config = pykube.KubeConfig.from_service_account()
 
     return (pykube.HTTPClient(config),
-            ZMon(zmon_url, token=zmon_token, username=zmon_user, password=zmon_password, verify=verify))
+            Zmon(zmon_url, token=zmon_token, verify=verify))
 
 
-def get_cluster_pods(kube_client, namespace, infrastructure_account=INFRASTRUCTURE_ACCOUNT, region=REGION):
+def get_cluster_pods(kube_client, region, infrastructure_account=INFRASTRUCTURE_ACCOUNT, namespace='default'):
     pods = pykube.Pod.objects(kube_client).filter(namespace=namespace)
 
     entities = []
@@ -73,7 +77,7 @@ def get_cluster_pods(kube_client, namespace, infrastructure_account=INFRASTRUCTU
     return entities
 
 
-def get_cluster_services(kube_client, namespace, infrastructure_account=INFRASTRUCTURE_ACCOUNT, region=REGION):
+def get_cluster_services(kube_client, region, infrastructure_account=INFRASTRUCTURE_ACCOUNT, namespace='default'):
     services = pykube.Service.objects(kube_client).filter(namespace=namespace)
 
     entities = []
@@ -82,7 +86,8 @@ def get_cluster_services(kube_client, namespace, infrastructure_account=INFRASTR
         obj = service.obj
 
         entity = {
-            'id': 'k8s-pod-{}-{}[{}:{}]'.format(service.name, obj['metadata']['uid'], infrastructure_account, region),
+            'id': 'k8s-service-{}-{}[{}:{}]'.format(
+                service.name, obj['metadata']['uid'], infrastructure_account, region),
             'type': SERVICE_TYPE,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
@@ -112,21 +117,35 @@ def get_existing_ids(existing_entities):
 def remove_missing_entities(existing_ids, current_ids, zmon_client, json=False):
     to_be_removed_ids = list(set(existing_ids) - set(current_ids))
 
+    error_count = 0
+
     if not json:
         logger.info('Removing {} entities from ZMon'.format(len(to_be_removed_ids)))
         for entity_id in to_be_removed_ids:
             logger.info('Removing entity with id: {}'.format(entity_id))
             deleted = zmon_client.delete_entity(entity_id)
-            if deleted:
-                logger.info('ZMon entity deleted successfully')
-            else:
+            if not deleted:
                 logger.info('Failed to delete entity!')
+                error_count += 1
 
-    return to_be_removed_ids
+    return to_be_removed_ids, error_count
 
 
-def add_new_entities(all_current_entities, current_ids, existing_ids, zmon_client, json=False):
-    new_entities = [e for e in all_current_entities if e['id'] in list(set(current_ids) - set(existing_ids))]
+def new_or_updated_entity(entity, existing_entities_dict):
+    # check if new entity
+    if entity['id'] not in existing_entities_dict:
+        return True
+
+    existing_entities_dict[entity['id']].pop('last_modified', None)
+
+    return not compare_entities(entity, existing_entities_dict[entity['id']])
+
+
+def add_new_entities(all_current_entities, existing_entities, zmon_client, json=False):
+    existing_entities_dict = {e['id']: e for e in existing_entities}
+    new_entities = [e for e in all_current_entities if new_or_updated_entity(e, existing_entities_dict)]
+
+    error_count = 0
 
     if not json:
         try:
@@ -135,29 +154,37 @@ def add_new_entities(all_current_entities, current_ids, existing_ids, zmon_clien
                 logger.info(
                     'Adding new {} entity with ID: {}'.format(entity['type'], entity['id']))
                 # resp = zmon_client.add_entity(entity)
-                # logger.info('ZMon response ... {}'.format(resp.status_code))
         except:
             logger.exception('Failed to add entity!')
+            error_count += 1
 
-    return new_entities
+    return new_entities, error_count
 
 
 def main():
-    argp = argparse.ArgumentParser(description='ZMon K8S Agent')
-    argp.add_argument('-s', '--service-account-path', dest='service_acc_path', help='K8S service account path.')
-    argp.add_argument('-n', '--namespace', dest='namespace', help='K8S cluster namespace.')
-    argp.add_argument('-e', '--entity-service', dest='entityservice', help='ZMon REST endpoint.')
+    argp = argparse.ArgumentParser(description='ZMON K8S Agent')
+    argp.add_argument('-s', '--service-account-path', dest='service_acc_path', default=None,
+                      help='K8S service account path. Can be set via ZMON_SERVICE_ACCOUNT_PATH env variable.')
+    argp.add_argument('-n', '--namespace', dest='namespace', default='default', help='K8S cluster namespace.')
+
+    argp.add_argument('-e', '--entity-service', dest='entityservice',
+                      help='ZMON REST endpoint. Can be set via ZMON_ENTITY_SERVICE_URL env variable.')
+
+    argp.add_argument('-r', '--region', dest='region', default=None)
+
     argp.add_argument('-j', '--json', dest='json', action='store_true', help='Print JSON output only.', default=False)
-    argp.add_argument('--no-oauth2', dest='disable_oauth2', action='store_true', default=False)
     argp.add_argument('--skip-ssl', dest='skip_ssl', action='store_true', default=False)
     argp.add_argument('-v', '--verbose', dest='verbose', action='store_true', default=False, help='Verbose output.')
 
     args = argp.parse_args()
 
-    if not args.disable_oauth2:
-        tokens.configure()
-        tokens.manage('uid', ['uid'])
-        tokens.start()
+    service_acc_path = args.service_acc_path if args.service_acc_path else os.environ.get('ZMON_SERVICE_ACCOUNT_PATH')
+    entityservice = args.entityservice if args.entityservice else os.environ.get(
+        'ZMON_ENTITY_SERVICE_URL', 'https://zmon.zalando.net')
+
+    tokens.configure()
+    tokens.manage('uid', ['uid'])
+    tokens.start()
 
     if args.verbose:
         logger.setLevel(logging.DEBUG)
@@ -167,14 +194,24 @@ def main():
         logger.warning('ZMON K8S agent will skip SSL verification!')
         verify = False
 
-    kube_client, zmon_client = get_clients(
-        args.service_acc_path, args.entityservice, disable_oauth2=args.skip_ssl, verify=verify)
+    if not args.region:
+        logger.info('Trying to figure out region..')
+        try:
+            response = requests.get('http://169.254.169.254/latest/meta-data/placement/availability-zone', timeout=2)
+        except:
+            logger.error('Region was not specified as a parameter and can not be fetched from instance meta-data!')
+            raise
+        region = response.text[:-1]
+    else:
+        region = args.region
+
+    kube_client, zmon_client = get_clients(service_acc_path, entityservice, verify=verify)
 
     # 1) Get cluster pods
-    pod_entities = get_cluster_pods(kube_client, args.namespace)
+    pod_entities = get_cluster_pods(kube_client, region, namespace=args.namespace)
 
     # 2) Get cluster services
-    service_entities = get_cluster_services(kube_client, args.namespace)
+    service_entities = get_cluster_services(kube_client, region, namespace=args.namespace)
 
     # 3) Get cluster nodes
     node_entities = get_cluster_nodes(kube_client)
@@ -190,10 +227,10 @@ def main():
 
     current_ids = [entity['id'] for entity in all_current_entities]
 
-    to_be_removed_ids = remove_missing_entities(existing_ids, current_ids, zmon_client, json=args.json)
+    to_be_removed_ids, delete_err = remove_missing_entities(existing_ids, current_ids, zmon_client, json=args.json)
 
     # 6) Add new entities
-    new_entities = add_new_entities(all_current_entities, current_ids, existing_ids, zmon_client, json=args.json)
+    new_entities, add_err = add_new_entities(all_current_entities, existing_entities, zmon_client, json=args.json)
 
     if args.json:
         output = {
