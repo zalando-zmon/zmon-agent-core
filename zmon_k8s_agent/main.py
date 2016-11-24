@@ -12,6 +12,8 @@ from zmon_cli.client import Zmon, compare_entities
 from zmon_k8s_agent.discovery.kubernetes import get_discovery_agent_klass
 
 
+BUILTIN_DISCOVERY = ('kubernetes',)
+
 logger = logging.getLogger(__name__)
 
 
@@ -82,14 +84,18 @@ def main():
     argp = argparse.ArgumentParser(description='ZMON Kubernetes Agent')
 
     argp.add_argument('-i', '--infrastructure-account', dest='infrastructure_account', default=None,
-                      help='Infrastructure account which identifies this agent. Can be set via '
-                           'ZMON_INFRASTRUCTURE_ACCOUNT env variable')
+                      help='Infrastructure account which identifies this agent. Can be set via  '
+                           'ZMON_AGENT_INFRASTRUCTURE_ACCOUNT env variable')
+    argp.add_argument('-r', '--region', dest='region',
+                      help='Cluster region. Can be set via ZMON_AGENT_REGION env variable.')
+
+    argp.add_argument('-d', '--discover', dest='discover',
+                      help=('Comma separated list of builtin discovery agents to be used. Current supported discovery '
+                            'agents are {}. Can be set via ZMON_AGENT_BUILTIN_DISCOVERY env variable ').format(
+                            BUILTIN_DISCOVERY))
 
     argp.add_argument('-e', '--entity-service', dest='entityservice',
-                      help='ZMON REST endpoint. Can be set via ZMON_ENTITY_SERVICE_URL env variable.')
-
-    argp.add_argument('-r', '--region', dest='region',
-                      help='Cluster region. Can be set via ZMON_REGION env variable.')
+                      help='ZMON REST endpoint. Can be set via ZMON_AGENT_ENTITY_SERVICE_URL env variable.')
 
     argp.add_argument('-j', '--json', dest='json', action='store_true', help='Print JSON output only.', default=False)
     argp.add_argument('--skip-ssl', dest='skip_ssl', action='store_true', default=False)
@@ -99,25 +105,24 @@ def main():
 
     # Hard requirements
     infrastructure_account = (args.infrastructure_account if args.infrastructure_account else
-                              os.environ.get('ZMON_INFRASTRUCTURE_ACCOUNT'))
+                              os.environ.get('ZMON_AGENT_INFRASTRUCTURE_ACCOUNT'))
     if not infrastructure_account:
-        raise RuntimeError('Cannot determine infrastructure account. Please use --infrastructure-account options or '
-                           'set env variable ZMON_INFRASTRUCTURE_ACCOUNT.')
+        raise RuntimeError('Cannot determine infrastructure account. Please use --infrastructure-account option or '
+                           'set env variable ZMON_AGENT_INFRASTRUCTURE_ACCOUNT.')
 
-    region = args.region if args.region else os.environ.get('ZMON_REGION')
-    entityservice = args.entityservice if args.entityservice else os.environ.get('ZMON_ENTITY_SERVICE_URL')
+    region = args.region if args.region else os.environ.get('ZMON_AGENT_REGION')
+    entityservice = args.entityservice if args.entityservice else os.environ.get('ZMON_AGENT_ENTITY_SERVICE_URL')
 
     # OAUTH2 tokens
     tokens.configure()
     tokens.manage('uid', ['uid'])
-    tokens.start()
 
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
     verify = True
     if args.skip_ssl:
-        logger.warning('ZMON Kubernetes agent will skip SSL verification!')
+        logger.warning('ZMON agent will skip SSL verification!')
         verify = False
 
     if not region:
@@ -135,6 +140,7 @@ def main():
 
     zmon_client = get_clients(entityservice, verify=verify)
 
+    # TODO: load agent dynamically!
     Discovery = get_discovery_agent_klass()
     discovery = Discovery(region, infrastructure_account)
 
@@ -151,7 +157,7 @@ def main():
 
     to_be_removed_ids, delete_err = remove_missing_entities(existing_ids, current_ids, zmon_client, json=args.json)
 
-    # 5) Add new entities
+    # Add new entities
     new_entities, add_err = add_new_entities(all_current_entities, existing_entities, zmon_client, json=args.json)
 
     if args.json:

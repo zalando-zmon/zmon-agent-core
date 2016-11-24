@@ -53,3 +53,6 @@ class Client:
 
     def get_services(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
         return pykube.Service.objects(self.client).filter(namespace=namespace)
+
+    def get_endpoints(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
+        return pykube.Endpoint.objects(self.client).filter(namespace=namespace)

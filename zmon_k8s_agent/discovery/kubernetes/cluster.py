@@ -21,6 +21,12 @@ INFRASTRUCTURE_ACCOUNT = 'k8s:zalando-zmon'
 
 INSTANCE_TYPE_LABEL = 'beta.kubernetes.io/instance-type'
 
+PROTECTED_FIELDS = ('id', 'type', 'infrastructure_account', 'created_by', 'region')
+
+SKIPPED_ANNOTATIONS = (
+    'kubernetes.io/created-by',
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,13 +34,13 @@ class Discovery:
 
     def __init__(self, region, infrastructure_account):
         # TODO: get config path from ENV variable
-        self.namespace = os.environ.get('ZMON_KUBERNETES_NAMESPACE')
-        self.cluster_id = os.environ.get('ZMON_KUBERNETES_CLUSTER_ID')
+        self.namespace = os.environ.get('ZMON_AGENT_KUBERNETES_NAMESPACE')
+        self.cluster_id = os.environ.get('ZMON_AGENT_KUBERNETES_CLUSTER_ID')
 
         if not self.cluster_id:
-            raise RuntimeError('Cannot determine cluster ID. Please set env variable ZMON_KUBERNETES_CLUSTER_ID')
+            raise RuntimeError('Cannot determine cluster ID. Please set env variable ZMON_AGENT_KUBERNETES_CLUSTER_ID')
 
-        config_path = os.environ.get('ZMON_KUBERNETES_CONFIG_PATH')
+        config_path = os.environ.get('ZMON_AGENT_KUBERNETES_CONFIG_PATH')
         self.kube_client = kube.Client(config_file_path=config_path)
 
         self.region = region
@@ -83,7 +89,13 @@ def get_all(kube_client, kube_func, namespace=None) -> list:
 
 def add_labels_to_entity(entity: dict, labels: dict) -> dict:
     for label, val in labels.items():
-        entity['labels.{}'.format(label)] = val
+        if label in (PROTECTED_FIELDS + SKIPPED_ANNOTATIONS):
+            if label in PROTECTED_FIELDS:
+                logger.warning('Skipping label/annotation [{}:{}] as it is in Protected entity fields {}'.format(
+                    label, val, PROTECTED_FIELDS))
+            continue
+
+        entity[label] = val
 
     return entity
 
@@ -103,10 +115,11 @@ def get_cluster_pods(kube_client, cluster_id, region, infrastructure_account, na
         obj = pod.obj
 
         containers = obj['spec'].get('containers', [])
+        container_statuses = {c['name']: c for c in obj['status']['containerStatuses']}
         conditions = {c['type']: c['status'] for c in obj['status']['conditions']}
 
         entity = {
-            'id': 'pod-{}[{}]'.format(pod.name, cluster_id),
+            'id': 'pod-{}-{}[{}]'.format(pod.name, pod.namespace, cluster_id),
             'type': POD_TYPE,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
@@ -120,16 +133,23 @@ def get_cluster_pods(kube_client, cluster_id, region, infrastructure_account, na
             'pod_host_ip': obj['status'].get('hostIP', ''),
             'pod_node_name': obj['spec']['nodeName'],
 
-            'containers': {c['name']: c['image'] for c in containers},
+            'containers': {
+                c['name']: {
+                    'image': c['image'],
+                    'ready': container_statuses.get(c['name'], {}).get('ready', True),
+                    'restarts': container_statuses.get(c['name'], {}).get('restartCount', 0),
+                } for c in containers
+            },
 
             # TODO: Add pod status
             'pod_phase': obj['status'].get('phase'),
             'pod_initialized': conditions.get('Initialized', False),
-            'pod_ready': conditions.get('Ready', False),
+            'pod_ready': conditions.get('Ready', True),
             'pod_scheduled': conditions.get('PodScheduled', False),
         }
 
         entity = add_labels_to_entity(entity, obj['metadata'].get('labels', {}))
+        entity = add_labels_to_entity(entity, obj['metadata'].get('annotations', {}))
 
         entities.append(entity)
 
@@ -138,6 +158,10 @@ def get_cluster_pods(kube_client, cluster_id, region, infrastructure_account, na
 
 def get_cluster_services(kube_client, cluster_id, region, infrastructure_account, namespace=None):
     entities = []
+
+    endpoints = get_all(kube_client, kube_client.get_endpoints, namespace)
+    # number of endpoints per service
+    endpoints_map = {e.name: len(e.obj.get('subsets', 0)) for e in endpoints}
 
     services = get_all(kube_client, kube_client.get_services, namespace)
 
@@ -153,7 +177,7 @@ def get_cluster_services(kube_client, cluster_id, region, infrastructure_account
                 host = hostname
 
         entity = {
-            'id': 'service-{}[{}]'.format(service.name, cluster_id),
+            'id': 'service-{}-{}[{}]'.format(service.name, service.namespace, cluster_id),
             'type': SERVICE_TYPE,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
@@ -167,6 +191,8 @@ def get_cluster_services(kube_client, cluster_id, region, infrastructure_account
             'service_namespace': obj['metadata']['namespace'],
             'service_type': service_type,
             'service_ports': obj['spec']['ports'],  # Could be useful when multiple ports are exposed.
+
+            'endpoints_count': endpoints_map.get(service.name, 0),
         }
 
         entities.append(entity)
@@ -232,6 +258,7 @@ def get_cluster_nodes(kube_client, cluster_id, region, infrastructure_account, p
         }
 
         entity = add_labels_to_entity(entity, obj['metadata'].get('labels', {}))
+        entity = add_labels_to_entity(entity, obj['metadata'].get('annotations', {}))
 
         entities.append(entity)
 
@@ -249,7 +276,7 @@ def get_cluster_replicasets(kube_client, cluster_id, region, infrastructure_acco
         containers = obj['spec']['template']['spec']['containers']
 
         entity = {
-            'id': 'replicaset-{}[{}]'.format(replicaset.name, cluster_id),
+            'id': 'replicaset-{}-{}[{}]'.format(replicaset.name, replicaset.namespace, cluster_id),
             'type': REPLICASET_TYPE,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
@@ -265,6 +292,7 @@ def get_cluster_replicasets(kube_client, cluster_id, region, infrastructure_acco
         }
 
         entity = add_labels_to_entity(entity, obj['metadata'].get('labels', {}))
+        entity = add_labels_to_entity(entity, obj['metadata'].get('annotations', {}))
 
         entities.append(entity)
 
@@ -286,7 +314,7 @@ def get_cluster_petsets(kube_client, cluster_id, region, infrastructure_account,
         containers = obj['spec'].get('template', {}).get('spec', {}).get('containers', [])
 
         entity = {
-            'id': 'petset-{}[{}]'.format(petset.name, cluster_id),
+            'id': 'petset-{}-{}[{}]'.format(petset.name, petset.namespace, cluster_id),
             'type': PETSET_TYPE,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
@@ -307,6 +335,7 @@ def get_cluster_petsets(kube_client, cluster_id, region, infrastructure_account,
         }
 
         entity = add_labels_to_entity(entity, obj['metadata'].get('labels', {}))
+        entity = add_labels_to_entity(entity, obj['metadata'].get('annotations', {}))
 
         entities.append(entity)
 
@@ -324,7 +353,7 @@ def get_cluster_daemonsets(kube_client, cluster_id, region, infrastructure_accou
         containers = obj['spec']['template']['spec']['containers']
 
         entity = {
-            'id': 'daemonset-{}[{}]'.format(daemonset.name, cluster_id),
+            'id': 'daemonset-{}-{}[{}]'.format(daemonset.name, daemonset.namespace, cluster_id),
             'type': DAEMONSET_TYPE,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
@@ -340,6 +369,7 @@ def get_cluster_daemonsets(kube_client, cluster_id, region, infrastructure_accou
         }
 
         entity = add_labels_to_entity(entity, obj['metadata'].get('labels', {}))
+        entity = add_labels_to_entity(entity, obj['metadata'].get('annotations', {}))
 
         entities.append(entity)
 
