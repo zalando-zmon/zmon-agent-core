@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Setup file for ZMON K8S agent
+Setup file for ZMON agent
 """
 import os
 
@@ -21,15 +21,15 @@ def get_requirements(path):
     return [req for req in content.split('\\n') if req != '']
 
 
-MAIN_PACKAGE = 'zmon_k8s_agent'
+MAIN_PACKAGE = 'zmon_agent'
 VERSION = read_version(MAIN_PACKAGE)
-DESCRIPTION = 'ZMON K8S agent.'
+DESCRIPTION = 'ZMON infrastructure discovery agent.'
 
-CONSOLE_SCRIPTS = ['zmon-k8s-agent = zmon_k8s_agent.main:main']
+CONSOLE_SCRIPTS = ['zmon-agent = zmon_agent.main:main']
 
 
 setup(
-    name='zmon-k8s-agent',
+    name='zmon-agent',
     version=VERSION,
     description=DESCRIPTION,
     long_description=open('README.rst').read(),

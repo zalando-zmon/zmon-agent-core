@@ -9,7 +9,7 @@ import tokens
 from zmon_cli.client import Zmon, compare_entities
 
 # TODO: Load dynamically
-from zmon_k8s_agent.discovery.kubernetes import get_discovery_agent_klass
+from zmon_agent.discovery.kubernetes import get_discovery_agent_klass
 
 
 BUILTIN_DISCOVERY = ('kubernetes',)
