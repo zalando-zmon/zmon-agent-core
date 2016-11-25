@@ -8,10 +8,6 @@ WORKDIR /agent
 
 RUN python setup.py install
 
-RUN adduser --disabled-password --gecos '' zmon-agent
-
 ADD scm-source.json /scm-source.json
-
-USER zmon-agent
 
 CMD ["zmon-agent", "-j"]
