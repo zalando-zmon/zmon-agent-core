@@ -3,7 +3,9 @@
 # TODO: this is pilot implementation!
 
 import os
+import shutil
 import logging
+import subprocess
 
 from . import kube
 
@@ -21,6 +23,8 @@ INSTANCE_TYPE_LABEL = 'beta.kubernetes.io/instance-type'
 
 PROTECTED_FIELDS = ('id', 'type', 'infrastructure_account', 'created_by', 'region')
 
+SERVICE_ACCOUNT_PATH = '/var/run/secrets/kubernetes.io/serviceaccount'
+
 SKIPPED_ANNOTATIONS = (
     'kubernetes.io/created-by',
 )
@@ -34,6 +38,10 @@ class Discovery:
         # TODO: get config path from ENV variable
         self.namespace = os.environ.get('ZMON_AGENT_KUBERNETES_NAMESPACE')
         self.cluster_id = os.environ.get('ZMON_AGENT_KUBERNETES_CLUSTER_ID')
+
+        if os.environ.get('ZMON_AGENT_KUBERNETES_UPDATE_CERTIFICATES'):
+            logger.info('Attempting to update Kubernetes service-account certificate.')
+            update_ca_certificate()
 
         if not self.cluster_id:
             raise RuntimeError('Cannot determine cluster ID. Please set env variable ZMON_AGENT_KUBERNETES_CLUSTER_ID')
@@ -72,6 +80,15 @@ class Discovery:
         )
 
         return all_current_entities
+
+
+def update_ca_certificate():
+    try:
+        shutil.copyfile(os.path.join(SERVICE_ACCOUNT_PATH, 'ca.crt'), '/usr/local/share/ca-certificates/ca-kube.crt')
+        subprocess.check_call(['update-ca-certificates'])
+    except:
+        logger.exception('{} failed to update CA certificates'.format(AGENT_TYPE))
+        raise
 
 
 def get_all(kube_client, kube_func, namespace=None) -> list:
