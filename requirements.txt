@@ -2,3 +2,4 @@ pykube==0.12.0
 requests
 stups-tokens==1.0.18
 zmon-cli>=1.0.57
+scm-source==1.0.9

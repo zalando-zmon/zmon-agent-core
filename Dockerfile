@@ -14,4 +14,4 @@ ADD scm-source.json /scm-source.json
 
 USER zmon-agent
 
-CMD ["zmon-agent", "-j", "-r", "eu-central-1"]
+CMD ["zmon-agent", "-j"]

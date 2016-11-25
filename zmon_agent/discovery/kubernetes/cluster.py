@@ -17,8 +17,6 @@ REPLICASET_TYPE = 'kube_replicaset'
 PETSET_TYPE = 'kube_petset'
 DAEMONSET_TYPE = 'kube_daemonset'
 
-INFRASTRUCTURE_ACCOUNT = 'k8s:zalando-zmon'
-
 INSTANCE_TYPE_LABEL = 'beta.kubernetes.io/instance-type'
 
 PROTECTED_FIELDS = ('id', 'type', 'infrastructure_account', 'created_by', 'region')
@@ -91,7 +89,7 @@ def add_labels_to_entity(entity: dict, labels: dict) -> dict:
     for label, val in labels.items():
         if label in (PROTECTED_FIELDS + SKIPPED_ANNOTATIONS):
             if label in PROTECTED_FIELDS:
-                logger.warning('Skipping label/annotation [{}:{}] as it is in Protected entity fields {}'.format(
+                logger.warning('Skipping label [{}:{}] as it is in Protected entity fields {}'.format(
                     label, val, PROTECTED_FIELDS))
             continue
 
@@ -141,7 +139,6 @@ def get_cluster_pods(kube_client, cluster_id, region, infrastructure_account, na
                 } for c in containers
             },
 
-            # TODO: Add pod status
             'pod_phase': obj['status'].get('phase'),
             'pod_initialized': conditions.get('Initialized', False),
             'pod_ready': conditions.get('Ready', True),

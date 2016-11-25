@@ -72,7 +72,10 @@ def add_new_entities(all_current_entities, existing_entities, zmon_client, json=
             for entity in new_entities:
                 logger.info(
                     'Adding new {} entity with ID: {}'.format(entity['type'], entity['id']))
-                # resp = zmon_client.add_entity(entity)
+
+                resp = zmon_client.add_entity(entity)
+
+                resp.raise_for_status()
         except:
             logger.exception('Failed to add entity!')
             error_count += 1
@@ -92,7 +95,7 @@ def main():
     argp.add_argument('-d', '--discover', dest='discover',
                       help=('Comma separated list of builtin discovery agents to be used. Current supported discovery '
                             'agents are {}. Can be set via ZMON_AGENT_BUILTIN_DISCOVERY env variable ').format(
-                            BUILTIN_DISCOVERY))
+                                BUILTIN_DISCOVERY))
 
     argp.add_argument('-e', '--entity-service', dest='entityservice',
                       help='ZMON REST endpoint. Can be set via ZMON_AGENT_ENTITY_SERVICE_URL env variable.')
@@ -159,6 +162,9 @@ def main():
 
     # Add new entities
     new_entities, add_err = add_new_entities(all_current_entities, existing_entities, zmon_client, json=args.json)
+
+    logger.info('Found {} new entities from {} entities ({} failed)'.format(
+        len(new_entities), len(current_entities), add_err))
 
     if args.json:
         output = {
