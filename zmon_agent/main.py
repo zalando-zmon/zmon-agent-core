@@ -1,3 +1,4 @@
+import time
 import argparse
 import os
 import logging
@@ -14,7 +15,10 @@ from zmon_agent.discovery.kubernetes import get_discovery_agent_klass
 
 BUILTIN_DISCOVERY = ('kubernetes',)
 
+AGENT_TYPE = 'zmon-agent'
+
 logger = logging.getLogger(__name__)
+logger.handlers = [logging.StreamHandler()]
 
 
 def get_clients(zmon_url, verify=True) -> Zmon:
@@ -33,12 +37,12 @@ def get_existing_ids(existing_entities):
     return [entity['id'] for entity in existing_entities]
 
 
-def remove_missing_entities(existing_ids, current_ids, zmon_client, json=False):
+def remove_missing_entities(existing_ids, current_ids, zmon_client, dry_run=False):
     to_be_removed_ids = list(set(existing_ids) - set(current_ids))
 
     error_count = 0
 
-    if not json:
+    if not dry_run:
         logger.info('Removing {} entities from ZMon'.format(len(to_be_removed_ids)))
         for entity_id in to_be_removed_ids:
             logger.info('Removing entity with id: {}'.format(entity_id))
@@ -60,13 +64,13 @@ def new_or_updated_entity(entity, existing_entities_dict):
     return not compare_entities(entity, existing_entities_dict[entity['id']])
 
 
-def add_new_entities(all_current_entities, existing_entities, zmon_client, json=False):
+def add_new_entities(all_current_entities, existing_entities, zmon_client, dry_run=False):
     existing_entities_dict = {e['id']: e for e in existing_entities}
     new_entities = [e for e in all_current_entities if new_or_updated_entity(e, existing_entities_dict)]
 
     error_count = 0
 
-    if not json:
+    if not dry_run:
         try:
             logger.info('Found {} new entities to be added in ZMon'.format(len(new_entities)))
             for entity in new_entities:
@@ -83,12 +87,87 @@ def add_new_entities(all_current_entities, existing_entities, zmon_client, json=
     return new_entities, error_count
 
 
+def get_account_entity(infrastructure_account, alias, region):
+    entity = {
+        'type': 'local',
+        'infrastructure_account': infrastructure_account,
+        'account_alias': alias,
+        'region': region,
+        'id': 'zmon-agent-account[{}:{}]'.format(infrastructure_account, region),
+        'created_by': AGENT_TYPE,
+    }
+
+    return entity
+
+
+def sync(infrastructure_account, alias, region, entity_service, verify, dry_run, interval):
+    while True:
+        try:
+            zmon_client = get_clients(entity_service, verify=verify)
+
+            account_entity = get_account_entity(infrastructure_account, alias, region)
+
+            # TODO: load agent dynamically!
+            Discovery = get_discovery_agent_klass()
+            discovery = Discovery(region, infrastructure_account)
+
+            all_current_entities = discovery.get_entities() + [account_entity]
+
+            # ZMON entities
+            query = discovery.get_filter_query()
+            existing_entities = zmon_client.get_entities(query=query)
+
+            # Remove non-existing entities
+            existing_ids = get_existing_ids(existing_entities)
+
+            current_ids = [entity['id'] for entity in all_current_entities]
+
+            to_be_removed_ids, delete_err = remove_missing_entities(
+                existing_ids, current_ids, zmon_client, dry_run=dry_run)
+
+            # Add new entities
+            new_entities, add_err = add_new_entities(
+                all_current_entities, existing_entities, zmon_client, dry_run=dry_run)
+
+            logger.info('Found {} new entities from {} entities ({} failed)'.format(
+                len(new_entities), len(all_current_entities), add_err))
+
+            # Add account entity
+            if not dry_run:
+                try:
+                    account_entity['errors'] = {'delete_count': delete_err, 'add_count': add_err}
+                    zmon_client.add_entity(account_entity)
+                except:
+                    logger.exception('Failed to add account entity!')
+
+            if dry_run:
+                output = {
+                    'to_be_removed_ids': to_be_removed_ids,
+                    'new_entities': new_entities
+                }
+
+                print(json.dumps(output, indent=4))
+
+            if not interval:
+                break
+
+            logger.info('ZMON agent sleeping for {} seconds ...'.format(interval))
+            time.sleep(interval)
+        except KeyboardInterrupt:
+            break
+        except:
+            logger.exception('ZMON agent failed!')
+
+
 def main():
     argp = argparse.ArgumentParser(description='ZMON Kubernetes Agent')
 
     argp.add_argument('-i', '--infrastructure-account', dest='infrastructure_account', default=None,
                       help='Infrastructure account which identifies this agent. Can be set via  '
-                           'ZMON_AGENT_INFRASTRUCTURE_ACCOUNT env variable')
+                           'ZMON_AGENT_INFRASTRUCTURE_ACCOUNT env variable.')
+    argp.add_argument('-a', '--account-alias', dest='alias', default=None,
+                      help='Account alias which identifies this agent. This is a more user friendly/readable account '
+                      'name. Can be set via ZMON_AGENT_ACCOUNT_ALIAS env variable.')
     argp.add_argument('-r', '--region', dest='region',
                       help='Cluster region. Can be set via ZMON_AGENT_REGION env variable.')
 
@@ -97,8 +176,12 @@ def main():
                             'agents are {}. Can be set via ZMON_AGENT_BUILTIN_DISCOVERY env variable ').format(
                                 BUILTIN_DISCOVERY))
 
-    argp.add_argument('-e', '--entity-service', dest='entityservice',
+    argp.add_argument('-e', '--entity-service', dest='entity_service',
                       help='ZMON REST endpoint. Can be set via ZMON_AGENT_ENTITY_SERVICE_URL env variable.')
+
+    argp.add_argument('--interval', dest='interval',
+                      help='Interval for agent sync. If not set then agent will run once. Can be set via '
+                      'ZMON_AGENT_INTERVAL env variable.')
 
     argp.add_argument('-j', '--json', dest='json', action='store_true', help='Print JSON output only.', default=False)
     argp.add_argument('--skip-ssl', dest='skip_ssl', action='store_true', default=False)
@@ -113,8 +196,10 @@ def main():
         raise RuntimeError('Cannot determine infrastructure account. Please use --infrastructure-account option or '
                            'set env variable ZMON_AGENT_INFRASTRUCTURE_ACCOUNT.')
 
+    alias = args.alias if args.alias else os.environ.get('ZMON_AGENT_ACCOUNT_ALIAS')
     region = args.region if args.region else os.environ.get('ZMON_AGENT_REGION')
-    entityservice = args.entityservice if args.entityservice else os.environ.get('ZMON_AGENT_ENTITY_SERVICE_URL')
+    entity_service = args.entity_service if args.entity_service else os.environ.get('ZMON_AGENT_ENTITY_SERVICE_URL')
+    interval = args.interval if args.interval else os.environ.get('ZMON_AGENT_INTERVAL')
 
     # OAUTH2 tokens
     tokens.configure()
@@ -141,38 +226,7 @@ def main():
             logger.error('AWS region was not specified and can not be fetched from instance meta-data!')
             raise
 
-    zmon_client = get_clients(entityservice, verify=verify)
-
-    # TODO: load agent dynamically!
-    Discovery = get_discovery_agent_klass()
-    discovery = Discovery(region, infrastructure_account)
-
-    all_current_entities = discovery.get_entities()
-
-    # ZMON entities
-    query = discovery.get_filter_query()
-    existing_entities = zmon_client.get_entities(query=query)
-
-    # Remove non-existing entities
-    existing_ids = get_existing_ids(existing_entities)
-
-    current_ids = [entity['id'] for entity in all_current_entities]
-
-    to_be_removed_ids, delete_err = remove_missing_entities(existing_ids, current_ids, zmon_client, json=args.json)
-
-    # Add new entities
-    new_entities, add_err = add_new_entities(all_current_entities, existing_entities, zmon_client, json=args.json)
-
-    logger.info('Found {} new entities from {} entities ({} failed)'.format(
-        len(new_entities), len(current_entities), add_err))
-
-    if args.json:
-        output = {
-            'to_be_removed_ids': to_be_removed_ids,
-            'new_entities': new_entities
-        }
-
-        print(json.dumps(output, indent=4))
+    sync(infrastructure_account, alias, region, entity_service, verify, args.json, interval)
 
 
 if __name__ == '__main__':
