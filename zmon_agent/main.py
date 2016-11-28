@@ -1,6 +1,7 @@
+import os
+import sys
 import time
 import argparse
-import os
 import logging
 import json
 
@@ -18,7 +19,7 @@ BUILTIN_DISCOVERY = ('kubernetes',)
 AGENT_TYPE = 'zmon-agent'
 
 logger = logging.getLogger(__name__)
-logger.handlers = [logging.StreamHandler()]
+logger.addHandler(logging.StreamHandler(stream=sys.stdout))
 
 
 def get_clients(zmon_url, verify=True) -> Zmon:
@@ -101,15 +102,15 @@ def get_account_entity(infrastructure_account, alias, region):
 
 
 def sync(infrastructure_account, alias, region, entity_service, verify, dry_run, interval):
+    # TODO: load agent dynamically!
+    Discovery = get_discovery_agent_class()
+    discovery = Discovery(region, infrastructure_account)
+
     while True:
         try:
             zmon_client = get_clients(entity_service, verify=verify)
 
             account_entity = get_account_entity(infrastructure_account, alias, region)
-
-            # TODO: load agent dynamically!
-            Discovery = get_discovery_agent_class()
-            discovery = Discovery(region, infrastructure_account)
 
             all_current_entities = discovery.get_entities() + [account_entity]
 
@@ -212,7 +213,8 @@ def main():
     tokens.configure()
     tokens.manage('uid', ['uid'])
 
-    if args.verbose:
+    verbose = args.verbose if args.verbose else os.environ.get('ZMON_AGENT_DEBUG', False)
+    if verbose:
         logger.setLevel(logging.DEBUG)
 
     verify = True
