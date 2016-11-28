@@ -205,6 +205,9 @@ def main():
     entity_service = args.entity_service if args.entity_service else os.environ.get('ZMON_AGENT_ENTITY_SERVICE_URL')
     interval = args.interval if args.interval else os.environ.get('ZMON_AGENT_INTERVAL')
 
+    if interval:
+        interval = int(interval)
+
     # OAUTH2 tokens
     tokens.configure()
     tokens.manage('uid', ['uid'])
