@@ -10,7 +10,7 @@ import tokens
 from zmon_cli.client import Zmon, compare_entities
 
 # TODO: Load dynamically
-from zmon_agent.discovery.kubernetes import get_discovery_agent_klass
+from zmon_agent.discovery.kubernetes import get_discovery_agent_class
 
 
 BUILTIN_DISCOVERY = ('kubernetes',)
@@ -108,7 +108,7 @@ def sync(infrastructure_account, alias, region, entity_service, verify, dry_run,
             account_entity = get_account_entity(infrastructure_account, alias, region)
 
             # TODO: load agent dynamically!
-            Discovery = get_discovery_agent_klass()
+            Discovery = get_discovery_agent_class()
             discovery = Discovery(region, infrastructure_account)
 
             all_current_entities = discovery.get_entities() + [account_entity]
@@ -132,13 +132,16 @@ def sync(infrastructure_account, alias, region, entity_service, verify, dry_run,
             logger.info('Found {} new entities from {} entities ({} failed)'.format(
                 len(new_entities), len(all_current_entities), add_err))
 
-            # Add account entity
+            # Add account entity - always!
             if not dry_run:
                 try:
                     account_entity['errors'] = {'delete_count': delete_err, 'add_count': add_err}
                     zmon_client.add_entity(account_entity)
                 except:
                     logger.exception('Failed to add account entity!')
+
+            logger.info(
+                'ZMON agent completed sync with {} addition errors and {} deletion errors'.format(add_err, delete_err))
 
             if dry_run:
                 output = {
@@ -149,6 +152,7 @@ def sync(infrastructure_account, alias, region, entity_service, verify, dry_run,
                 print(json.dumps(output, indent=4))
 
             if not interval:
+                logger.info('ZMON agent running once. Exiting!')
                 break
 
             logger.info('ZMON agent sleeping for {} seconds ...'.format(interval))
@@ -173,11 +177,11 @@ def main():
 
     argp.add_argument('-d', '--discover', dest='discover',
                       help=('Comma separated list of builtin discovery agents to be used. Current supported discovery '
-                            'agents are {}. Can be set via ZMON_AGENT_BUILTIN_DISCOVERY env variable ').format(
+                            'agents are {}. Can be set via ZMON_AGENT_BUILTIN_DISCOVERY env variable.').format(
                                 BUILTIN_DISCOVERY))
 
     argp.add_argument('-e', '--entity-service', dest='entity_service',
-                      help='ZMON REST endpoint. Can be set via ZMON_AGENT_ENTITY_SERVICE_URL env variable.')
+                      help='ZMON backend URL. Can be set via ZMON_AGENT_ENTITY_SERVICE_URL env variable.')
 
     argp.add_argument('--interval', dest='interval',
                       help='Interval for agent sync. If not set then agent will run once. Can be set via '
