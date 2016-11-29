@@ -20,6 +20,7 @@ AGENT_TYPE = 'zmon-agent'
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler(stream=sys.stdout))
+logger.setLevel(logging.INFO)
 
 
 def get_clients(zmon_url, verify=True) -> Zmon:
