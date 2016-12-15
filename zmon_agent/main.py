@@ -149,7 +149,9 @@ def sync(infrastructure_account, alias, region, entity_service, verify, dry_run,
         except KeyboardInterrupt:
             break
         except:
-            logger.exception('ZMON agent failed!')
+            fail_sleep = interval if interval else 60
+            logger.exception('ZMON agent failed. Retrying after {} seconds ...'.format(fail_sleep))
+            time.sleep(fail_sleep)
 
 
 def main():
