@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 class Discovery:
 
-    def __init__(self, region, infrastructure_account):
+    def __init__(self, region, infrastructure_account, alias):
         # TODO: get config path from ENV variable
         self.namespace = os.environ.get('ZMON_AGENT_KUBERNETES_NAMESPACE')
         self.cluster_id = os.environ.get('ZMON_AGENT_KUBERNETES_CLUSTER_ID')
@@ -51,10 +51,24 @@ class Discovery:
 
         self.region = region
         self.infrastructure_account = infrastructure_account
+        self.alias = alias
 
     @staticmethod
     def get_filter_query() -> dict:
         return {'created_by': AGENT_TYPE}
+
+    def get_account_entity(self):
+        entity = {
+            'type': 'local',
+            'infrastructure_account': self.infrastructure_account,
+            'account_alias': self.alias,
+            'region': self.region,
+            'kube_cluster': self.cluster_id,
+            'id': 'kube-cluster[{}:{}]'.format(self.infrastructure_account, self.region),
+            'created_by': AGENT_TYPE,
+        }
+
+        return entity
 
     def get_entities(self) -> list:
 
@@ -136,6 +150,7 @@ def get_cluster_pods(kube_client, cluster_id, region, infrastructure_account, na
         entity = {
             'id': 'pod-{}-{}[{}]'.format(pod.name, pod.namespace, cluster_id),
             'type': POD_TYPE,
+            'kube_cluster': cluster_id,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
@@ -193,6 +208,7 @@ def get_cluster_services(kube_client, cluster_id, region, infrastructure_account
         entity = {
             'id': 'service-{}-{}[{}]'.format(service.name, service.namespace, cluster_id),
             'type': SERVICE_TYPE,
+            'kube_cluster': cluster_id,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
@@ -240,6 +256,7 @@ def get_cluster_nodes(kube_client, cluster_id, region, infrastructure_account, p
         entity = {
             'id': 'node-{}[{}]'.format(node.name, cluster_id),
             'type': NODE_TYPE,
+            'kube_cluster': cluster_id,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
@@ -292,6 +309,7 @@ def get_cluster_replicasets(kube_client, cluster_id, region, infrastructure_acco
         entity = {
             'id': 'replicaset-{}-{}[{}]'.format(replicaset.name, replicaset.namespace, cluster_id),
             'type': REPLICASET_TYPE,
+            'kube_cluster': cluster_id,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
@@ -330,6 +348,7 @@ def get_cluster_petsets(kube_client, cluster_id, region, infrastructure_account,
         entity = {
             'id': 'petset-{}-{}[{}]'.format(petset.name, petset.namespace, cluster_id),
             'type': PETSET_TYPE,
+            'kube_cluster': cluster_id,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
@@ -369,6 +388,7 @@ def get_cluster_daemonsets(kube_client, cluster_id, region, infrastructure_accou
         entity = {
             'id': 'daemonset-{}-{}[{}]'.format(daemonset.name, daemonset.namespace, cluster_id),
             'type': DAEMONSET_TYPE,
+            'kube_cluster': cluster_id,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,

@@ -89,29 +89,16 @@ def add_new_entities(all_current_entities, existing_entities, zmon_client, dry_r
     return new_entities, error_count
 
 
-def get_account_entity(infrastructure_account, alias, region):
-    entity = {
-        'type': 'local',
-        'infrastructure_account': infrastructure_account,
-        'account_alias': alias,
-        'region': region,
-        'id': 'zmon-agent-account[{}:{}]'.format(infrastructure_account, region),
-        'created_by': AGENT_TYPE,
-    }
-
-    return entity
-
-
 def sync(infrastructure_account, alias, region, entity_service, verify, dry_run, interval):
     # TODO: load agent dynamically!
     Discovery = get_discovery_agent_class()
-    discovery = Discovery(region, infrastructure_account)
+    discovery = Discovery(region, infrastructure_account, alias)
 
     while True:
         try:
             zmon_client = get_clients(entity_service, verify=verify)
 
-            account_entity = get_account_entity(infrastructure_account, alias, region)
+            account_entity = discovery.get_account_entity()
 
             all_current_entities = discovery.get_entities() + [account_entity]
 
@@ -202,10 +189,10 @@ def main():
         raise RuntimeError('Cannot determine infrastructure account. Please use --infrastructure-account option or '
                            'set env variable ZMON_AGENT_INFRASTRUCTURE_ACCOUNT.')
 
-    alias = args.alias if args.alias else os.environ.get('ZMON_AGENT_ACCOUNT_ALIAS')
-    region = args.region if args.region else os.environ.get('ZMON_AGENT_REGION')
-    entity_service = args.entity_service if args.entity_service else os.environ.get('ZMON_AGENT_ENTITY_SERVICE_URL')
-    interval = args.interval if args.interval else os.environ.get('ZMON_AGENT_INTERVAL')
+    alias = os.environ.get('ZMON_AGENT_ACCOUNT_ALIAS', args.alias)
+    region = os.environ.get('ZMON_AGENT_REGION', args.region)
+    entity_service = os.environ.get('ZMON_AGENT_ENTITY_SERVICE_URL', args.entity_service)
+    interval = os.environ.get('ZMON_AGENT_INTERVAL', args.interval)
 
     if interval:
         interval = int(interval)
