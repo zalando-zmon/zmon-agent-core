@@ -53,9 +53,8 @@ class Discovery:
         self.infrastructure_account = infrastructure_account
         self.alias = alias
 
-    @staticmethod
-    def get_filter_query() -> dict:
-        return {'created_by': AGENT_TYPE}
+    def get_filter_query(self) -> dict:
+        return {'created_by': AGENT_TYPE, 'kube_cluster': self.cluster_id}
 
     def get_account_entity(self):
         entity = {
