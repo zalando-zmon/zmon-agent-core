@@ -16,7 +16,7 @@ POD_TYPE = 'kube_pod'
 SERVICE_TYPE = 'kube_service'
 NODE_TYPE = 'kube_node'
 REPLICASET_TYPE = 'kube_replicaset'
-PETSET_TYPE = 'kube_petset'
+STATEFULSET_TYPE = 'kube_statefulset'
 DAEMONSET_TYPE = 'kube_daemonset'
 
 INSTANCE_TYPE_LABEL = 'beta.kubernetes.io/instance-type'
@@ -85,11 +85,12 @@ class Discovery:
             self.kube_client, self.cluster_id, self.region, self.infrastructure_account, namespace=self.namespace)
         daemonset_entities = get_cluster_daemonsets(
             self.kube_client, self.cluster_id, self.region, self.infrastructure_account, namespace=self.namespace)
-        petset_entities = get_cluster_petsets(
+        statefulset_entities = get_cluster_statefulsets(
             self.kube_client, self.cluster_id, self.region, self.infrastructure_account, namespace=self.namespace)
 
         all_current_entities = (
-            pod_entities + node_entities + service_entities + replicaset_entities + daemonset_entities + petset_entities
+            pod_entities + node_entities + service_entities + replicaset_entities + daemonset_entities +
+            statefulset_entities
         )
 
         return all_current_entities
@@ -331,13 +332,13 @@ def get_cluster_replicasets(kube_client, cluster_id, region, infrastructure_acco
     return entities
 
 
-def get_cluster_petsets(kube_client, cluster_id, region, infrastructure_account, namespace='default'):
+def get_cluster_statefulsets(kube_client, cluster_id, region, infrastructure_account, namespace='default'):
     entities = []
 
-    petsets = get_all(kube_client, kube_client.get_petsets, namespace)
+    statefulsets = get_all(kube_client, kube_client.get_statefulsets, namespace)
 
-    for petset in petsets:
-        obj = petset.obj
+    for statefulset in statefulsets:
+        obj = statefulset.obj
 
         # Stale replic set?!
         if obj['spec']['replicas'] == 0:
@@ -346,16 +347,16 @@ def get_cluster_petsets(kube_client, cluster_id, region, infrastructure_account,
         containers = obj['spec'].get('template', {}).get('spec', {}).get('containers', [])
 
         entity = {
-            'id': 'petset-{}-{}[{}]'.format(petset.name, petset.namespace, cluster_id),
-            'type': PETSET_TYPE,
+            'id': 'statefulset-{}-{}[{}]'.format(statefulset.name, statefulset.namespace, cluster_id),
+            'type': STATEFULSET_TYPE,
             'kube_cluster': cluster_id,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
 
-            'petset_name': petset.name,
-            'petset_namespace': obj['metadata']['namespace'],
-            'petset_service_name': obj['spec']['serviceName'],
+            'statefulset_name': statefulset.name,
+            'statefulset_namespace': obj['metadata']['namespace'],
+            'statefulset_service_name': obj['spec']['serviceName'],
 
             'volume_claims': {
                 v['metadata']['name']: v['status'].get('phase', 'UNKNOWN')

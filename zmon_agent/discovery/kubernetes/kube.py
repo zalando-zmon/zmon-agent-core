@@ -42,8 +42,8 @@ class Client:
     def get_pods(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
         return pykube.Pod.objects(self.client).filter(namespace=namespace)
 
-    def get_petsets(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
-        return pykube.PetSet.objects(self.client).filter(namespace=namespace)
+    def get_statefulsets(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
+        return pykube.StatefulSet.objects(self.client).filter(namespace=namespace)
 
     def get_daemonsets(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
         return pykube.DaemonSet.objects(self.client).filter(namespace=namespace)
