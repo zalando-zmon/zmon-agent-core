@@ -63,7 +63,7 @@ class Discovery:
             'account_alias': self.alias,
             'region': self.region,
             'kube_cluster': self.cluster_id,
-            'id': 'kube-cluster[{}:{}]'.format(self.infrastructure_account, self.region),
+            'id': 'kube-cluster[{}]'.format(self.cluster_id),
             'created_by': AGENT_TYPE,
         }
 
