@@ -89,10 +89,10 @@ def add_new_entities(all_current_entities, existing_entities, zmon_client, dry_r
     return new_entities, error_count
 
 
-def sync(infrastructure_account, alias, region, entity_service, verify, dry_run, interval):
+def sync(infrastructure_account, region, entity_service, verify, dry_run, interval):
     # TODO: load agent dynamically!
     Discovery = get_discovery_agent_class()
-    discovery = Discovery(region, infrastructure_account, alias)
+    discovery = Discovery(region, infrastructure_account)
 
     while True:
         try:
@@ -160,9 +160,6 @@ def main():
     argp.add_argument('-i', '--infrastructure-account', dest='infrastructure_account', default=None,
                       help='Infrastructure account which identifies this agent. Can be set via  '
                            'ZMON_AGENT_INFRASTRUCTURE_ACCOUNT env variable.')
-    argp.add_argument('-a', '--account-alias', dest='alias', default=None,
-                      help='Account alias which identifies this agent. This is a more user friendly/readable account '
-                      'name. Can be set via ZMON_AGENT_ACCOUNT_ALIAS env variable.')
     argp.add_argument('-r', '--region', dest='region',
                       help='Cluster region. Can be set via ZMON_AGENT_REGION env variable.')
 
@@ -191,7 +188,6 @@ def main():
         raise RuntimeError('Cannot determine infrastructure account. Please use --infrastructure-account option or '
                            'set env variable ZMON_AGENT_INFRASTRUCTURE_ACCOUNT.')
 
-    alias = os.environ.get('ZMON_AGENT_ACCOUNT_ALIAS', args.alias)
     region = os.environ.get('ZMON_AGENT_REGION', args.region)
     entity_service = os.environ.get('ZMON_AGENT_ENTITY_SERVICE_URL', args.entity_service)
     interval = os.environ.get('ZMON_AGENT_INTERVAL', args.interval)
@@ -225,7 +221,7 @@ def main():
             logger.error('AWS region was not specified and can not be fetched from instance meta-data!')
             raise
 
-    sync(infrastructure_account, alias, region, entity_service, verify, args.json, interval)
+    sync(infrastructure_account, region, entity_service, verify, args.json, interval)
 
 
 if __name__ == '__main__':

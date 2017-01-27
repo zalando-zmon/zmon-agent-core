@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 class Discovery:
 
-    def __init__(self, region, infrastructure_account, alias):
+    def __init__(self, region, infrastructure_account):
         # TODO: get config path from ENV variable
         self.namespace = os.environ.get('ZMON_AGENT_KUBERNETES_NAMESPACE')
         self.cluster_id = os.environ.get('ZMON_AGENT_KUBERNETES_CLUSTER_ID')
@@ -51,7 +51,6 @@ class Discovery:
 
         self.region = region
         self.infrastructure_account = infrastructure_account
-        self.alias = alias
 
     def get_filter_query(self) -> dict:
         return {'created_by': AGENT_TYPE, 'kube_cluster': self.cluster_id}
@@ -60,7 +59,6 @@ class Discovery:
         entity = {
             'type': 'local',
             'infrastructure_account': self.infrastructure_account,
-            'account_alias': self.alias,
             'region': self.region,
             'kube_cluster': self.cluster_id,
             'id': 'kube-cluster[{}:{}]'.format(self.infrastructure_account, self.region),
