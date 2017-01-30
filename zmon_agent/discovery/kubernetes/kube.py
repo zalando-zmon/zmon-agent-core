@@ -29,6 +29,9 @@ class Client:
 
             self.__pykube = pykube.HTTPClient(config)
 
+        # Hack to ignore REQUESTS_CA_BUNDLE env variable and respect `session.verify` to service account ca.crt
+        self.__pykube.session.trust_env = False
+
         return self.__pykube
 
     def get_namespaces(self) -> list:
