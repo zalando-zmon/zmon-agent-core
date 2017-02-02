@@ -1,4 +1,4 @@
-from zmon_k8s_agent import __version__
+from zmon_agent import __version__
 
 
 def get_user_agent():
