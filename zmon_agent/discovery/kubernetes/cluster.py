@@ -36,6 +36,7 @@ class Discovery:
         # TODO: get config path from ENV variable
         self.namespace = os.environ.get('ZMON_AGENT_KUBERNETES_NAMESPACE')
         self.cluster_id = os.environ.get('ZMON_AGENT_KUBERNETES_CLUSTER_ID')
+        self.alias = os.environ.get('ZMON_AGENT_KUBERNETES_CLUSTER_ALIAS', '')
 
         if not self.cluster_id:
             raise RuntimeError('Cannot determine cluster ID. Please set env variable ZMON_AGENT_KUBERNETES_CLUSTER_ID')
@@ -55,6 +56,7 @@ class Discovery:
             'infrastructure_account': self.infrastructure_account,
             'region': self.region,
             'kube_cluster': self.cluster_id,
+            'alias': self.alias,
             'id': 'kube-cluster[{}:{}]'.format(self.infrastructure_account, self.region),
             'created_by': AGENT_TYPE,
         }
@@ -64,21 +66,21 @@ class Discovery:
     def get_entities(self) -> list:
 
         pod_entities = get_cluster_pods(
-            self.kube_client, self.cluster_id, self.region, self.infrastructure_account, namespace=self.namespace)
+            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account, namespace=self.namespace)
 
         # Pass pod_entities in order to get node_pod_count!
         node_entities = get_cluster_nodes(
-            self.kube_client, self.cluster_id, self.region, self.infrastructure_account, pod_entities,
+            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account, pod_entities,
             namespace=self.namespace)
 
         service_entities = get_cluster_services(
-            self.kube_client, self.cluster_id, self.region, self.infrastructure_account, namespace=self.namespace)
+            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account, namespace=self.namespace)
         replicaset_entities = get_cluster_replicasets(
-            self.kube_client, self.cluster_id, self.region, self.infrastructure_account, namespace=self.namespace)
+            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account, namespace=self.namespace)
         daemonset_entities = get_cluster_daemonsets(
-            self.kube_client, self.cluster_id, self.region, self.infrastructure_account, namespace=self.namespace)
+            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account, namespace=self.namespace)
         statefulset_entities = get_cluster_statefulsets(
-            self.kube_client, self.cluster_id, self.region, self.infrastructure_account, namespace=self.namespace)
+            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account, namespace=self.namespace)
 
         all_current_entities = (
             pod_entities + node_entities + service_entities + replicaset_entities + daemonset_entities +
@@ -112,7 +114,7 @@ def add_labels_to_entity(entity: dict, labels: dict) -> dict:
     return entity
 
 
-def get_cluster_pods(kube_client, cluster_id, region, infrastructure_account, namespace=None):
+def get_cluster_pods(kube_client, cluster_id, alias, region, infrastructure_account, namespace=None):
     """
     Return all Pods as ZMON entities.
     """
@@ -134,6 +136,7 @@ def get_cluster_pods(kube_client, cluster_id, region, infrastructure_account, na
             'id': 'pod-{}-{}[{}]'.format(pod.name, pod.namespace, cluster_id),
             'type': POD_TYPE,
             'kube_cluster': cluster_id,
+            'alias': alias,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
@@ -169,7 +172,7 @@ def get_cluster_pods(kube_client, cluster_id, region, infrastructure_account, na
     return entities
 
 
-def get_cluster_services(kube_client, cluster_id, region, infrastructure_account, namespace=None):
+def get_cluster_services(kube_client, cluster_id, alias, region, infrastructure_account, namespace=None):
     entities = []
 
     endpoints = get_all(kube_client, kube_client.get_endpoints, namespace)
@@ -193,6 +196,7 @@ def get_cluster_services(kube_client, cluster_id, region, infrastructure_account
             'id': 'service-{}-{}[{}]'.format(service.name, service.namespace, cluster_id),
             'type': SERVICE_TYPE,
             'kube_cluster': cluster_id,
+            'alias': alias,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
@@ -214,7 +218,7 @@ def get_cluster_services(kube_client, cluster_id, region, infrastructure_account
     return entities
 
 
-def get_cluster_nodes(kube_client, cluster_id, region, infrastructure_account, pod_entities=None, namespace=None):
+def get_cluster_nodes(kube_client, cluster_id, alias, region, infrastructure_account, pod_entities=None, namespace=None):
     entities = []
 
     nodes = kube_client.get_nodes()
@@ -241,6 +245,7 @@ def get_cluster_nodes(kube_client, cluster_id, region, infrastructure_account, p
             'id': 'node-{}[{}]'.format(node.name, cluster_id),
             'type': NODE_TYPE,
             'kube_cluster': cluster_id,
+            'alias': alias,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
@@ -280,7 +285,7 @@ def get_cluster_nodes(kube_client, cluster_id, region, infrastructure_account, p
     return entities
 
 
-def get_cluster_replicasets(kube_client, cluster_id, region, infrastructure_account, namespace=None):
+def get_cluster_replicasets(kube_client, cluster_id, alias, region, infrastructure_account, namespace=None):
     entities = []
 
     replicasets = get_all(kube_client, kube_client.get_replicasets, namespace)
@@ -294,6 +299,7 @@ def get_cluster_replicasets(kube_client, cluster_id, region, infrastructure_acco
             'id': 'replicaset-{}-{}[{}]'.format(replicaset.name, replicaset.namespace, cluster_id),
             'type': REPLICASET_TYPE,
             'kube_cluster': cluster_id,
+            'alias': alias,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
@@ -315,7 +321,7 @@ def get_cluster_replicasets(kube_client, cluster_id, region, infrastructure_acco
     return entities
 
 
-def get_cluster_statefulsets(kube_client, cluster_id, region, infrastructure_account, namespace='default'):
+def get_cluster_statefulsets(kube_client, cluster_id, alias, region, infrastructure_account, namespace='default'):
     entities = []
 
     statefulsets = get_all(kube_client, kube_client.get_statefulsets, namespace)
@@ -333,6 +339,7 @@ def get_cluster_statefulsets(kube_client, cluster_id, region, infrastructure_acc
             'id': 'statefulset-{}-{}[{}]'.format(statefulset.name, statefulset.namespace, cluster_id),
             'type': STATEFULSET_TYPE,
             'kube_cluster': cluster_id,
+            'alias': alias,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
@@ -359,7 +366,7 @@ def get_cluster_statefulsets(kube_client, cluster_id, region, infrastructure_acc
     return entities
 
 
-def get_cluster_daemonsets(kube_client, cluster_id, region, infrastructure_account, namespace='default'):
+def get_cluster_daemonsets(kube_client, cluster_id, alias, region, infrastructure_account, namespace='default'):
     entities = []
 
     daemonsets = get_all(kube_client, kube_client.get_daemonsets, namespace)
@@ -373,6 +380,7 @@ def get_cluster_daemonsets(kube_client, cluster_id, region, infrastructure_accou
             'id': 'daemonset-{}-{}[{}]'.format(daemonset.name, daemonset.namespace, cluster_id),
             'type': DAEMONSET_TYPE,
             'kube_cluster': cluster_id,
+            'alias': alias,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
