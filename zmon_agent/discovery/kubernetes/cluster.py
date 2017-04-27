@@ -3,7 +3,9 @@
 # TODO: this is pilot implementation!
 
 import os
+import sys
 import logging
+import psycopg2
 
 from . import kube
 
@@ -16,6 +18,7 @@ NODE_TYPE = 'kube_node'
 REPLICASET_TYPE = 'kube_replicaset'
 STATEFULSET_TYPE = 'kube_statefulset'
 DAEMONSET_TYPE = 'kube_daemonset'
+POSTGRESDB_TYPE = 'postgresql_database'
 
 INSTANCE_TYPE_LABEL = 'beta.kubernetes.io/instance-type'
 
@@ -28,6 +31,8 @@ SKIPPED_ANNOTATIONS = (
 )
 
 logger = logging.getLogger(__name__)
+logger.addHandler(logging.StreamHandler(stream=sys.stdout))
+logger.setLevel(logging.INFO)
 
 
 class Discovery:
@@ -37,6 +42,11 @@ class Discovery:
         self.namespace = os.environ.get('ZMON_AGENT_KUBERNETES_NAMESPACE')
         self.cluster_id = os.environ.get('ZMON_AGENT_KUBERNETES_CLUSTER_ID')
         self.alias = os.environ.get('ZMON_AGENT_KUBERNETES_CLUSTER_ALIAS', '')
+
+        self.postgres_user = os.environ.get('ZMON_AGENT_POSTGRES_USER')
+        self.postgres_pass = os.environ.get('ZMON_AGENT_POSTGRES_PASS')
+        if not (self.postgres_user and self.postgres_pass):
+            logger.warning('No credentials provided for PostgreSQL database discovery!')
 
         if not self.cluster_id:
             raise RuntimeError('Cannot determine cluster ID. Please set env variable ZMON_AGENT_KUBERNETES_CLUSTER_ID')
@@ -81,10 +91,14 @@ class Discovery:
             self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account, namespace=self.namespace)
         statefulset_entities = get_cluster_statefulsets(
             self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account, namespace=self.namespace)
+        postgresdb_entities = get_cluster_postgresdbs(
+            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account,
+            self.postgres_user, self.postgres_pass,
+            namespace=self.namespace)
 
         all_current_entities = (
             pod_entities + node_entities + service_entities + replicaset_entities + daemonset_entities +
-            statefulset_entities
+            statefulset_entities + postgresdb_entities
         )
 
         return all_current_entities
@@ -398,5 +412,72 @@ def get_cluster_daemonsets(kube_client, cluster_id, alias, region, infrastructur
         entity = add_labels_to_entity(entity, obj['metadata'].get('annotations', {}))
 
         entities.append(entity)
+
+    return entities
+
+
+def list_postgres_databases(*args, **kwargs):
+    logger.info("Trying to list DBs on host: {}".format(kwargs['host']))
+
+    try:
+        conn = psycopg2.connect(*args, **kwargs)
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT datname
+              FROM pg_database
+             WHERE datname NOT IN('postgres', 'template0', 'template1')
+        """)
+        return [row[0] for row in cur.fetchall()]
+    except:
+        logger.exception("Failed to list DBs!")
+        return []
+
+
+def get_cluster_postgresdbs(kube_client, cluster_id, alias, region, infrastructure_account,
+                            postgres_user, postgres_pass,
+                            namespace=None):
+    if not (postgres_user and postgres_pass):
+        return []
+
+    entities = []
+
+    services = get_all(kube_client, kube_client.get_services, namespace)
+
+    for service in services:
+        obj = service.obj
+
+        # TODO: filter in the API call
+        labels = obj['metadata'].get('labels', {})
+        if labels.get('application') != 'spilo':
+            continue
+
+        service_namespace = obj['metadata']['namespace']
+        service_dns_name = '{}.{}.svc.cluster.local'.format(service.name, service_namespace)
+        service_port = obj['spec']['ports'][0]['port']  # Assume the first port is the one we need.
+
+        dbnames = list_postgres_databases(host=service_dns_name,
+                                          port=service_port,
+                                          user=postgres_user,
+                                          password=postgres_pass,
+                                          dbname='postgres',
+                                          sslmode='require')
+        for db in dbnames:
+            entity = {
+                'id': '{}-{}-{}[{}]'.format(db, service.name, service.namespace, cluster_id),
+                'type': POSTGRESDB_TYPE,
+                'kube_cluster': cluster_id,
+                'alias': alias,
+                'created_by': AGENT_TYPE,
+                'infrastructure_account': infrastructure_account,
+                'region': region,
+
+                'postgresql_cluster': service.name,
+                'database_name': db,
+                'shards': {
+                    db: '{}:{}/{}'.format(service_dns_name, service_port, db)
+                }
+            }
+
+            entities.append(entity)
 
     return entities
