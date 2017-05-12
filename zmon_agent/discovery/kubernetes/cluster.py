@@ -18,7 +18,10 @@ NODE_TYPE = 'kube_node'
 REPLICASET_TYPE = 'kube_replicaset'
 STATEFULSET_TYPE = 'kube_statefulset'
 DAEMONSET_TYPE = 'kube_daemonset'
-POSTGRESDB_TYPE = 'postgresql_database'
+
+POSTGRESQL_CLUSTER_TYPE = 'postgresql_cluster'
+POSTGRESQL_DATABASE_TYPE = 'postgresql_database'
+POSTGRESQL_DEFAULT_PORT = 5432
 
 INSTANCE_TYPE_LABEL = 'beta.kubernetes.io/instance-type'
 
@@ -91,14 +94,17 @@ class Discovery:
             self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account, namespace=self.namespace)
         statefulset_entities = get_cluster_statefulsets(
             self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account, namespace=self.namespace)
-        postgresdb_entities = get_cluster_postgresdbs(
+
+        postgresql_cluster_entities = get_postgresql_clusters(
             self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account,
-            self.postgres_user, self.postgres_pass,
             namespace=self.namespace)
+        postgresql_database_entities = get_postgresql_databases(
+            postgresql_cluster_entities, self.cluster_id, self.alias, self.region, self.infrastructure_account,
+            self.postgres_user, self.postgres_pass)
 
         all_current_entities = (
             pod_entities + node_entities + service_entities + replicaset_entities + daemonset_entities +
-            statefulset_entities + postgresdb_entities
+            statefulset_entities + postgresql_cluster_entities + postgresql_database_entities
         )
 
         return all_current_entities
@@ -433,12 +439,8 @@ def list_postgres_databases(*args, **kwargs):
         return []
 
 
-def get_cluster_postgresdbs(kube_client, cluster_id, alias, region, infrastructure_account,
-                            postgres_user, postgres_pass,
+def get_postgresql_clusters(kube_client, cluster_id, alias, region, infrastructure_account,
                             namespace=None):
-    if not (postgres_user and postgres_pass):
-        return []
-
     entities = []
 
     services = get_all(kube_client, kube_client.get_services, namespace)
@@ -453,28 +455,55 @@ def get_cluster_postgresdbs(kube_client, cluster_id, alias, region, infrastructu
 
         service_namespace = obj['metadata']['namespace']
         service_dns_name = '{}.{}.svc.cluster.local'.format(service.name, service_namespace)
-        service_port = obj['spec']['ports'][0]['port']  # Assume the first port is the one we need.
 
-        dbnames = list_postgres_databases(host=service_dns_name,
-                                          port=service_port,
+        entity = {
+            'id': '{}-{}[{}]'.format(service.name, service.namespace, cluster_id),
+            'type': POSTGRESQL_CLUSTER_TYPE,
+            'kube_cluster': cluster_id,
+            'alias': alias,
+            'created_by': AGENT_TYPE,
+            'infrastructure_account': infrastructure_account,
+            'region': region,
+
+            'dnsname': service_dns_name,
+            'shards': {
+                'postgres': '{}:{}/postgres'.format(service_dns_name, POSTGRESQL_DEFAULT_PORT)
+            }
+        }
+
+        entities.append(entity)
+
+    return entities
+
+
+def get_postgresql_databases(postgresql_clusters, cluster_id, alias, region, infrastructure_account,
+                             postgres_user, postgres_pass):
+    if not (postgres_user and postgres_pass):
+        return []
+
+    entities = []
+
+    for pgcluster in postgresql_clusters:
+        dbnames = list_postgres_databases(host=pgcluster['dnsname'],
+                                          port=POSTGRESQL_DEFAULT_PORT,
                                           user=postgres_user,
                                           password=postgres_pass,
                                           dbname='postgres',
                                           sslmode='require')
         for db in dbnames:
             entity = {
-                'id': '{}-{}-{}[{}]'.format(db, service.name, service.namespace, cluster_id),
-                'type': POSTGRESDB_TYPE,
+                'id': '{}-{}'.format(db, pgcluster['id']),
+                'type': POSTGRESQL_DATABASE_TYPE,
                 'kube_cluster': cluster_id,
                 'alias': alias,
                 'created_by': AGENT_TYPE,
                 'infrastructure_account': infrastructure_account,
                 'region': region,
 
-                'postgresql_cluster': service.name,
+                'postgresql_cluster': pgcluster['id'],
                 'database_name': db,
                 'shards': {
-                    db: '{}:{}/{}'.format(service_dns_name, service_port, db)
+                    db: '{}:{}/{}'.format(pgcluster['dnsname'], POSTGRESQL_DEFAULT_PORT, db)
                 }
             }
 
