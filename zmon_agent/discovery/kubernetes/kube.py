@@ -59,3 +59,6 @@ class Client:
 
     def get_endpoints(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
         return pykube.Endpoint.objects(self.client).filter(namespace=namespace)
+
+    def get_ingresses(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
+        return pykube.Ingress.objects(self.client).filter(namespace=namespace)

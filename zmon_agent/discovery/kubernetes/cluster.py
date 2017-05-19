@@ -18,6 +18,7 @@ NODE_TYPE = 'kube_node'
 REPLICASET_TYPE = 'kube_replicaset'
 STATEFULSET_TYPE = 'kube_statefulset'
 DAEMONSET_TYPE = 'kube_daemonset'
+INGRESS_TYPE = 'kube_ingress'
 
 POSTGRESQL_CLUSTER_TYPE = 'postgresql_cluster'
 POSTGRESQL_DATABASE_TYPE = 'postgresql_database'
@@ -79,7 +80,8 @@ class Discovery:
     def get_entities(self) -> list:
 
         pod_entities = get_cluster_pods(
-            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account, namespace=self.namespace)
+            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account,
+            namespace=self.namespace)
 
         # Pass pod_entities in order to get node_pod_count!
         node_entities = get_cluster_nodes(
@@ -87,13 +89,21 @@ class Discovery:
             namespace=self.namespace)
 
         service_entities = get_cluster_services(
-            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account, namespace=self.namespace)
+            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account,
+            namespace=self.namespace)
         replicaset_entities = get_cluster_replicasets(
-            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account, namespace=self.namespace)
+            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account,
+            namespace=self.namespace)
         daemonset_entities = get_cluster_daemonsets(
-            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account, namespace=self.namespace)
+            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account,
+            namespace=self.namespace)
         statefulset_entities = get_cluster_statefulsets(
-            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account, namespace=self.namespace)
+            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account,
+            namespace=self.namespace)
+
+        ingress_entities = get_cluster_ingresses(
+            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account,
+            namespace=self.namespace)
 
         postgresql_cluster_entities = get_postgresql_clusters(
             self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account,
@@ -104,7 +114,7 @@ class Discovery:
 
         all_current_entities = (
             pod_entities + node_entities + service_entities + replicaset_entities + daemonset_entities +
-            statefulset_entities + postgresql_cluster_entities + postgresql_database_entities
+            ingress_entities + statefulset_entities + postgresql_cluster_entities + postgresql_database_entities
         )
 
         return all_current_entities
@@ -238,7 +248,8 @@ def get_cluster_services(kube_client, cluster_id, alias, region, infrastructure_
     return entities
 
 
-def get_cluster_nodes(kube_client, cluster_id, alias, region, infrastructure_account, pod_entities=None, namespace=None):
+def get_cluster_nodes(
+        kube_client, cluster_id, alias, region, infrastructure_account, pod_entities=None, namespace=None):
     entities = []
 
     nodes = kube_client.get_nodes()
@@ -422,6 +433,37 @@ def get_cluster_daemonsets(kube_client, cluster_id, alias, region, infrastructur
     return entities
 
 
+def get_cluster_ingresses(kube_client, cluster_id, alias, region, infrastructure_account, namespace='default'):
+    entities = []
+
+    ingresses = get_all(kube_client, kube_client.get_ingresses, namespace)
+
+    for ingress in ingresses:
+        obj = ingress.obj
+
+        entity = {
+            'id': 'ingress-{}-{}[{}]'.format(ingress.name, ingress.namespace, cluster_id),
+            'type': INGRESS_TYPE,
+            'kube_cluster': cluster_id,
+            'alias': alias,
+            'created_by': AGENT_TYPE,
+            'infrastructure_account': infrastructure_account,
+            'region': region,
+
+            'ingress_name': ingress.name,
+            'ingress_namespace': ingress.namespace,
+
+            'ingress_rules': obj['spec'].get('rules', [])
+        }
+
+        entities.append(entity)
+
+    return entities
+
+
+########################################################################################################################
+# POSTGRESQL   | TODO: move to separate discovery                                                                      #
+########################################################################################################################
 def list_postgres_databases(*args, **kwargs):
     logger.info("Trying to list DBs on host: {}".format(kwargs['host']))
 
