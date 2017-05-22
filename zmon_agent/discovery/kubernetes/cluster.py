@@ -21,6 +21,7 @@ DAEMONSET_TYPE = 'kube_daemonset'
 INGRESS_TYPE = 'kube_ingress'
 
 POSTGRESQL_CLUSTER_TYPE = 'postgresql_cluster'
+POSTGRESQL_CLUSTER_MEMBER_TYPE = 'postgresql_cluster_member'
 POSTGRESQL_DATABASE_TYPE = 'postgresql_database'
 POSTGRESQL_DEFAULT_PORT = 5432
 
@@ -108,13 +109,17 @@ class Discovery:
         postgresql_cluster_entities = get_postgresql_clusters(
             self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account,
             namespace=self.namespace)
+        postgresql_cluster_member_entities = get_postgresql_cluster_members(
+            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account,
+            namespace=self.namespace)
         postgresql_database_entities = get_postgresql_databases(
             postgresql_cluster_entities, self.cluster_id, self.alias, self.region, self.infrastructure_account,
             self.postgres_user, self.postgres_pass)
 
         all_current_entities = (
             pod_entities + node_entities + service_entities + replicaset_entities + daemonset_entities +
-            ingress_entities + statefulset_entities + postgresql_cluster_entities + postgresql_database_entities
+            ingress_entities + statefulset_entities + postgresql_cluster_entities + postgresql_cluster_member_entities +
+            postgresql_database_entities
         )
 
         return all_current_entities
@@ -499,7 +504,7 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, region, infrastructu
         service_dns_name = '{}.{}.svc.cluster.local'.format(service.name, service_namespace)
 
         entity = {
-            'id': '{}-{}[{}]'.format(service.name, service.namespace, cluster_id),
+            'id': 'pg-{}[{}]'.format(service.name, cluster_id),
             'type': POSTGRESQL_CLUSTER_TYPE,
             'kube_cluster': cluster_id,
             'alias': alias,
@@ -511,6 +516,42 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, region, infrastructu
             'shards': {
                 'postgres': '{}:{}/postgres'.format(service_dns_name, POSTGRESQL_DEFAULT_PORT)
             }
+        }
+
+        entities.append(entity)
+
+    return entities
+
+
+def get_postgresql_cluster_members(kube_client, cluster_id, alias, region, infrastructure_account,
+                                   namespace=None):
+    entities = []
+
+    pods = get_all(kube_client, kube_client.get_pods, namespace)
+
+    for pod in pods:
+        obj = pod.obj
+
+        # TODO: filter in the API call
+        labels = obj['metadata'].get('labels', {})
+        if labels.get('application') != 'spilo' or labels.get('version') is None:
+            continue
+
+        pod_number = pod.name.split('-')[-1]
+        pod_namespace = obj['metadata']['namespace']
+        service_dns_name = '{}.{}.svc.cluster.local'.format(labels['version'], pod_namespace)
+
+        entity = {
+            'id': 'pg-{}-{}[{}]'.format(service_dns_name, pod_number, cluster_id),
+            'type': POSTGRESQL_CLUSTER_MEMBER_TYPE,
+            'kube_cluster': cluster_id,
+            'alias': alias,
+            'created_by': AGENT_TYPE,
+            'infrastructure_account': infrastructure_account,
+            'region': region,
+
+            'dnsname': service_dns_name,
+            'pod': pod.name
         }
 
         entities.append(entity)
