@@ -461,6 +461,8 @@ def get_cluster_ingresses(kube_client, cluster_id, alias, region, infrastructure
             'ingress_rules': obj['spec'].get('rules', [])
         }
 
+        entity = add_labels_to_entity(entity, obj['metadata'].get('labels', {}))
+
         entities.append(entity)
 
     return entities
