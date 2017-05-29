@@ -212,7 +212,7 @@ def get_cluster_services(kube_client, cluster_id, alias, region, infrastructure_
 
     endpoints = get_all(kube_client, kube_client.get_endpoints, namespace)
     # number of endpoints per service
-    endpoints_map = {e.name: len(e.obj.get('subsets', 0)) for e in endpoints}
+    endpoints_map = {e.name: len(e.obj['subsets']) for e in endpoints if e.obj.get('subsets')}
 
     services = get_all(kube_client, kube_client.get_services, namespace)
 
