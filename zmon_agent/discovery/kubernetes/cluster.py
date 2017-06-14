@@ -530,6 +530,8 @@ def get_postgresql_cluster_members(kube_client, cluster_id, alias, region, infra
     entities = []
 
     pods = get_all(kube_client, kube_client.get_pods, namespace)
+    pvcs = get_all(kube_client, kube_client.get_persistentvolumeclaims, namespace)
+    pvs = get_all(kube_client, kube_client.get_persistentvolumes)
 
     for pod in pods:
         obj = pod.obj
@@ -543,6 +545,19 @@ def get_postgresql_cluster_members(kube_client, cluster_id, alias, region, infra
         pod_namespace = obj['metadata']['namespace']
         service_dns_name = '{}.{}.svc.cluster.local'.format(labels['version'], pod_namespace)
 
+        # unfortunately, there appears to be no way of filtering these on the server side :(
+        try:
+            pvc_name = obj['spec']['volumes'][0]['persistentVolumeClaim']['claimName']  # assume only one PVC
+            for pvc in pvcs:
+                if pvc.name == pvc_name:
+                    for pv in pvs:
+                        if pv.name == pvc.obj['spec']['volumeName']:
+                            ebs_volume_id = pv.obj['spec']['awsElasticBlockStore']['volumeID'].split('/')[-1]
+                            break  # only one matching item is expected, so when found, we can leave the loop
+                    break
+        except:
+            ebs_volume_id = ''
+
         entity = {
             'id': 'pg-{}-{}[{}]'.format(service_dns_name, pod_number, cluster_id),
             'type': POSTGRESQL_CLUSTER_MEMBER_TYPE,
@@ -553,7 +568,8 @@ def get_postgresql_cluster_members(kube_client, cluster_id, alias, region, infra
             'region': region,
 
             'dnsname': service_dns_name,
-            'pod': pod.name
+            'pod': pod.name,
+            'volume': ebs_volume_id
         }
 
         entities.append(entity)

@@ -62,3 +62,9 @@ class Client:
 
     def get_ingresses(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
         return pykube.Ingress.objects(self.client).filter(namespace=namespace)
+
+    def get_persistentvolumes(self, **kwargs) -> pykube.query.Query:
+        return pykube.PersistentVolume.objects(self.client).filter()
+
+    def get_persistentvolumeclaims(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
+        return pykube.PersistentVolumeClaim.objects(self.client).filter(namespace=namespace)
