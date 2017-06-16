@@ -8,6 +8,4 @@ WORKDIR /agent
 
 RUN python setup.py install
 
-ADD scm-source.json /scm-source.json
-
 CMD ["zmon-agent"]

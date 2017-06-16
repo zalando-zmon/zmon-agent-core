@@ -1,0 +1,34 @@
+build_steps:
+- desc: "Install dependencies"
+  cmd: |
+    apt-get install -q -y --no-install-recommends \
+      python3.5 \
+      python3.5-dev \
+      python3-pip \
+      python3-setuptools \
+      python3-wheel \
+      gcc \
+      libffi-dev \
+      libssl-dev \
+      tox
+    curl -sSL https://get.docker.com/ | sh
+    pip3 install -r requirements.txt
+    pip3 install -U flake8
+
+- desc: "Flake 8"
+  cmd: |
+    flake8 .
+
+- desc: "Build Docker Image"
+  cmd: |
+    docker build -t registry-write.opensource.zalan.do/zmon/zmon-agent-core:0.1-a26 .
+
+- desc: "Push Docker Image (if on master)"
+  cmd: |
+    IS_PR_BUILD=${CDP_PULL_REQUEST_NUMBER+"true"}
+    if [[ ${IS_PR_BUILD} != "true" ]]
+    then
+      docker push registry-write.opensource.zalan.do/zmon/zmon-agent-core:0.1-a26
+    else
+      echo "Image not pushed because the build is not a push to master"
+    fi
