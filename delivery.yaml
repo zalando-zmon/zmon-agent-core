@@ -21,14 +21,14 @@ build_steps:
 
 - desc: "Build Docker Image"
   cmd: |
-    docker build -t registry-write.opensource.zalan.do/zmon/zmon-agent-core:0.1-a26 .
+    docker build -t registry-write.opensource.zalan.do/zmon/zmon-agent-core:0.1-a27 .
 
 - desc: "Push Docker Image (if on master)"
   cmd: |
     IS_PR_BUILD=${CDP_PULL_REQUEST_NUMBER+"true"}
     if [[ ${IS_PR_BUILD} != "true" ]]
     then
-      docker push registry-write.opensource.zalan.do/zmon/zmon-agent-core:0.1-a26
+      docker push registry-write.opensource.zalan.do/zmon/zmon-agent-core:0.1-a27
     else
       echo "Image not pushed because the build is not a push to master"
     fi
