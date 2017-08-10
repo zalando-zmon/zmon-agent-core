@@ -47,6 +47,7 @@ class Discovery:
         self.namespace = os.environ.get('ZMON_AGENT_KUBERNETES_NAMESPACE')
         self.cluster_id = os.environ.get('ZMON_AGENT_KUBERNETES_CLUSTER_ID')
         self.alias = os.environ.get('ZMON_AGENT_KUBERNETES_CLUSTER_ALIAS', '')
+        self.environment = os.environ.get('ZMON_AGENT_KUBERNETES_CLUSTER_ENVIRONMENT', '')
 
         self.postgres_user = os.environ.get('ZMON_AGENT_POSTGRES_USER')
         self.postgres_pass = os.environ.get('ZMON_AGENT_POSTGRES_PASS')
@@ -72,6 +73,7 @@ class Discovery:
             'region': self.region,
             'kube_cluster': self.cluster_id,
             'alias': self.alias,
+            'environment': self.environment,
             'id': 'kube-cluster[{}:{}]'.format(self.infrastructure_account, self.region),
             'created_by': AGENT_TYPE,
         }
@@ -81,40 +83,40 @@ class Discovery:
     def get_entities(self) -> list:
 
         pod_entities = get_cluster_pods(
-            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account,
+            self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
             namespace=self.namespace)
 
         # Pass pod_entities in order to get node_pod_count!
         node_entities = get_cluster_nodes(
-            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account, pod_entities,
-            namespace=self.namespace)
+            self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
+            pod_entities, namespace=self.namespace)
 
         service_entities = get_cluster_services(
-            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account,
+            self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
             namespace=self.namespace)
         replicaset_entities = get_cluster_replicasets(
-            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account,
+            self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
             namespace=self.namespace)
         daemonset_entities = get_cluster_daemonsets(
-            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account,
+            self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
             namespace=self.namespace)
         statefulset_entities = get_cluster_statefulsets(
-            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account,
+            self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
             namespace=self.namespace)
 
         ingress_entities = get_cluster_ingresses(
-            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account,
+            self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
             namespace=self.namespace)
 
         postgresql_cluster_entities = get_postgresql_clusters(
-            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account,
+            self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
             namespace=self.namespace)
         postgresql_cluster_member_entities = get_postgresql_cluster_members(
-            self.kube_client, self.cluster_id, self.alias, self.region, self.infrastructure_account,
+            self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
             namespace=self.namespace)
         postgresql_database_entities = get_postgresql_databases(
-            postgresql_cluster_entities, self.cluster_id, self.alias, self.region, self.infrastructure_account,
-            self.postgres_user, self.postgres_pass)
+            postgresql_cluster_entities, self.cluster_id, self.alias, self.environment, self.region,
+            self.infrastructure_account, self.postgres_user, self.postgres_pass)
 
         all_current_entities = (
             pod_entities + node_entities + service_entities + replicaset_entities + daemonset_entities +
@@ -149,7 +151,7 @@ def add_labels_to_entity(entity: dict, labels: dict) -> dict:
     return entity
 
 
-def get_cluster_pods(kube_client, cluster_id, alias, region, infrastructure_account, namespace=None):
+def get_cluster_pods(kube_client, cluster_id, alias, environment, region, infrastructure_account, namespace=None):
     """
     Return all Pods as ZMON entities.
     """
@@ -172,6 +174,7 @@ def get_cluster_pods(kube_client, cluster_id, alias, region, infrastructure_acco
             'type': POD_TYPE,
             'kube_cluster': cluster_id,
             'alias': alias,
+            'environment': environment,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
@@ -207,7 +210,7 @@ def get_cluster_pods(kube_client, cluster_id, alias, region, infrastructure_acco
     return entities
 
 
-def get_cluster_services(kube_client, cluster_id, alias, region, infrastructure_account, namespace=None):
+def get_cluster_services(kube_client, cluster_id, alias, environment, region, infrastructure_account, namespace=None):
     entities = []
 
     endpoints = get_all(kube_client, kube_client.get_endpoints, namespace)
@@ -232,6 +235,7 @@ def get_cluster_services(kube_client, cluster_id, alias, region, infrastructure_
             'type': SERVICE_TYPE,
             'kube_cluster': cluster_id,
             'alias': alias,
+            'environment': environment,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
@@ -254,7 +258,7 @@ def get_cluster_services(kube_client, cluster_id, alias, region, infrastructure_
 
 
 def get_cluster_nodes(
-        kube_client, cluster_id, alias, region, infrastructure_account, pod_entities=None, namespace=None):
+        kube_client, cluster_id, alias, environment, region, infrastructure_account, pod_entities=None, namespace=None):
     entities = []
 
     nodes = kube_client.get_nodes()
@@ -282,6 +286,7 @@ def get_cluster_nodes(
             'type': NODE_TYPE,
             'kube_cluster': cluster_id,
             'alias': alias,
+            'environment': environment,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
@@ -321,7 +326,8 @@ def get_cluster_nodes(
     return entities
 
 
-def get_cluster_replicasets(kube_client, cluster_id, alias, region, infrastructure_account, namespace=None):
+def get_cluster_replicasets(kube_client, cluster_id, alias, environment, region, infrastructure_account,
+                            namespace=None):
     entities = []
 
     replicasets = get_all(kube_client, kube_client.get_replicasets, namespace)
@@ -336,6 +342,7 @@ def get_cluster_replicasets(kube_client, cluster_id, alias, region, infrastructu
             'type': REPLICASET_TYPE,
             'kube_cluster': cluster_id,
             'alias': alias,
+            'environment': environment,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
@@ -357,7 +364,8 @@ def get_cluster_replicasets(kube_client, cluster_id, alias, region, infrastructu
     return entities
 
 
-def get_cluster_statefulsets(kube_client, cluster_id, alias, region, infrastructure_account, namespace='default'):
+def get_cluster_statefulsets(kube_client, cluster_id, alias, environment, region, infrastructure_account,
+                             namespace='default'):
     entities = []
 
     statefulsets = get_all(kube_client, kube_client.get_statefulsets, namespace)
@@ -376,6 +384,7 @@ def get_cluster_statefulsets(kube_client, cluster_id, alias, region, infrastruct
             'type': STATEFULSET_TYPE,
             'kube_cluster': cluster_id,
             'alias': alias,
+            'environment': environment,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
@@ -402,7 +411,8 @@ def get_cluster_statefulsets(kube_client, cluster_id, alias, region, infrastruct
     return entities
 
 
-def get_cluster_daemonsets(kube_client, cluster_id, alias, region, infrastructure_account, namespace='default'):
+def get_cluster_daemonsets(kube_client, cluster_id, alias, environment, region, infrastructure_account,
+                           namespace='default'):
     entities = []
 
     daemonsets = get_all(kube_client, kube_client.get_daemonsets, namespace)
@@ -417,6 +427,7 @@ def get_cluster_daemonsets(kube_client, cluster_id, alias, region, infrastructur
             'type': DAEMONSET_TYPE,
             'kube_cluster': cluster_id,
             'alias': alias,
+            'environment': environment,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
@@ -438,7 +449,8 @@ def get_cluster_daemonsets(kube_client, cluster_id, alias, region, infrastructur
     return entities
 
 
-def get_cluster_ingresses(kube_client, cluster_id, alias, region, infrastructure_account, namespace='default'):
+def get_cluster_ingresses(kube_client, cluster_id, alias, environment, region, infrastructure_account,
+                          namespace='default'):
     entities = []
 
     ingresses = get_all(kube_client, kube_client.get_ingresses, namespace)
@@ -451,6 +463,7 @@ def get_cluster_ingresses(kube_client, cluster_id, alias, region, infrastructure
             'type': INGRESS_TYPE,
             'kube_cluster': cluster_id,
             'alias': alias,
+            'environment': environment,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
@@ -488,7 +501,7 @@ def list_postgres_databases(*args, **kwargs):
         return []
 
 
-def get_postgresql_clusters(kube_client, cluster_id, alias, region, infrastructure_account,
+def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region, infrastructure_account,
                             namespace=None):
     entities = []
 
@@ -510,6 +523,7 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, region, infrastructu
             'type': POSTGRESQL_CLUSTER_TYPE,
             'kube_cluster': cluster_id,
             'alias': alias,
+            'environment': environment,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
@@ -525,7 +539,7 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, region, infrastructu
     return entities
 
 
-def get_postgresql_cluster_members(kube_client, cluster_id, alias, region, infrastructure_account,
+def get_postgresql_cluster_members(kube_client, cluster_id, alias, environment, region, infrastructure_account,
                                    namespace=None):
     entities = []
 
@@ -563,6 +577,7 @@ def get_postgresql_cluster_members(kube_client, cluster_id, alias, region, infra
             'type': POSTGRESQL_CLUSTER_MEMBER_TYPE,
             'kube_cluster': cluster_id,
             'alias': alias,
+            'environment': environment,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
@@ -577,7 +592,7 @@ def get_postgresql_cluster_members(kube_client, cluster_id, alias, region, infra
     return entities
 
 
-def get_postgresql_databases(postgresql_clusters, cluster_id, alias, region, infrastructure_account,
+def get_postgresql_databases(postgresql_clusters, cluster_id, alias, environment, region, infrastructure_account,
                              postgres_user, postgres_pass):
     if not (postgres_user and postgres_pass):
         return []
@@ -597,6 +612,7 @@ def get_postgresql_databases(postgresql_clusters, cluster_id, alias, region, inf
                 'type': POSTGRESQL_DATABASE_TYPE,
                 'kube_cluster': cluster_id,
                 'alias': alias,
+                'environment': environment,
                 'created_by': AGENT_TYPE,
                 'infrastructure_account': infrastructure_account,
                 'region': region,
