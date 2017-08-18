@@ -300,10 +300,10 @@ def get_cluster_nodes(
             'node_type': instance_type,
             'instance_type': instance_type,
             'pod_count': node_pod_count.get(node.name, 0),
-            'pod_capacity': obj['status']['capacity']['pods'],
-            'memory_capacity': obj['status']['capacity']['memory'],
-            'pod_allocatable': obj['status']['allocatable']['pods'],
-            'memory_allocatable': obj['status']['allocatable']['memory'],
+            'pod_capacity': obj['status'].get('capacity', {}).get('pods', 0),
+            'memory_capacity': obj['status'].get('capacity', {}).get('memory', 0),
+            'pod_allocatable': obj['status'].get('allocatable', {}).get('pods', 0),
+            'memory_allocatable': obj['status'].get('allocatable', {}).get('memory', 0),
             'image_count': len(obj['status'].get('images', [])),
 
             'container_runtime_version': obj['status']['nodeInfo']['containerRuntimeVersion'],
@@ -350,7 +350,7 @@ def get_cluster_replicasets(kube_client, cluster_id, alias, environment, region,
             'replicaset_name': replicaset.name,
             'replicaset_namespace': obj['metadata']['namespace'],
 
-            'containers': {c['name']: c['image'] for c in containers},
+            'containers': {c['name']: c.get('image', '') for c in containers if 'name' in c},
 
             'replicas': obj['spec'].get('replicas', 0),
             'ready_replicas': obj['status'].get('readyReplicas', 0),
@@ -397,7 +397,7 @@ def get_cluster_statefulsets(kube_client, cluster_id, alias, environment, region
                 v['metadata']['name']: v['status'].get('phase', 'UNKNOWN')
                 for v in obj['spec'].get('volumeClaimTemplates', [])
             },
-            'containers': {c['name']: c['image'] for c in containers},
+            'containers': {c['name']: c.get('image', '') for c in containers if 'name' in c},
 
             'replicas': obj['spec'].get('replicas'),
             'replicas_status': obj['status'].get('replicas'),
@@ -435,7 +435,7 @@ def get_cluster_daemonsets(kube_client, cluster_id, alias, environment, region, 
             'daemonset_name': daemonset.name,
             'daemonset_namespace': obj['metadata']['namespace'],
 
-            'containers': {c['name']: c['image'] for c in containers},
+            'containers': {c['name']: c.get('image', '') for c in containers if 'name' in c},
 
             'desired_count': obj['status'].get('desiredNumberScheduled', 0),
             'current_count': obj['status'].get('currentNumberScheduled', 0),
