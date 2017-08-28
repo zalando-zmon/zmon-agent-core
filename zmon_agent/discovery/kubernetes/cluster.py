@@ -24,6 +24,7 @@ POSTGRESQL_CLUSTER_TYPE = 'postgresql_cluster'
 POSTGRESQL_CLUSTER_MEMBER_TYPE = 'postgresql_cluster_member'
 POSTGRESQL_DATABASE_TYPE = 'postgresql_database'
 POSTGRESQL_DEFAULT_PORT = 5432
+POSTGRESQL_CONNECT_TIMEOUT = os.environ.get('ZMON_AGENT_POSTGRESQL_CONNECT_TIMEOUT', 2)
 
 INSTANCE_TYPE_LABEL = 'beta.kubernetes.io/instance-type'
 
@@ -488,7 +489,10 @@ def list_postgres_databases(*args, **kwargs):
     logger.info("Trying to list DBs on host: {}".format(kwargs['host']))
 
     try:
+        kwargs.update({'connect_timeout': POSTGRESQL_CONNECT_TIMEOUT})
+
         conn = psycopg2.connect(*args, **kwargs)
+
         cur = conn.cursor()
         cur.execute("""
             SELECT datname
