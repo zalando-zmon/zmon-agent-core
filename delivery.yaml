@@ -23,7 +23,7 @@ build_steps:
   cmd: |
     docker build -t registry-write.opensource.zalan.do/zmon/zmon-agent-core:0.1-a29 .
 
-- desc: "Push Docker Image (if on master)"
+- desc: "Push Docker Image (if on master) - trigger"
   cmd: |
     IS_PR_BUILD=${CDP_PULL_REQUEST_NUMBER+"true"}
     if [[ ${IS_PR_BUILD} != "true" ]]
