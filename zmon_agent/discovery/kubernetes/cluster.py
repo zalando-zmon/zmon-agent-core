@@ -2,6 +2,7 @@
 
 # TODO: this is pilot implementation!
 
+import itertools
 import os
 import sys
 import logging
@@ -13,6 +14,7 @@ from . import kube
 AGENT_TYPE = 'zmon-kubernetes-agent'
 
 POD_TYPE = 'kube_pod'
+CONTAINER_TYPE = 'kube_pod_container'
 SERVICE_TYPE = 'kube_service'
 NODE_TYPE = 'kube_node'
 REPLICASET_TYPE = 'kube_replicaset'
@@ -28,13 +30,11 @@ POSTGRESQL_CONNECT_TIMEOUT = os.environ.get('ZMON_AGENT_POSTGRESQL_CONNECT_TIMEO
 
 INSTANCE_TYPE_LABEL = 'beta.kubernetes.io/instance-type'
 
-PROTECTED_FIELDS = ('id', 'type', 'infrastructure_account', 'created_by', 'region')
+PROTECTED_FIELDS = set(('id', 'type', 'infrastructure_account', 'created_by', 'region'))
 
 SERVICE_ACCOUNT_PATH = '/var/run/secrets/kubernetes.io/serviceaccount'
 
-SKIPPED_ANNOTATIONS = (
-    'kubernetes.io/created-by',
-)
+SKIPPED_ANNOTATIONS = set(('kubernetes.io/created-by'))
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler(stream=sys.stdout))
@@ -83,14 +83,14 @@ class Discovery:
 
     def get_entities(self) -> list:
 
-        pod_entities = get_cluster_pods(
+        pod_container_entities = list(get_cluster_pods_and_containers(
             self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
-            namespace=self.namespace)
+            namespace=self.namespace))
 
         # Pass pod_entities in order to get node_pod_count!
         node_entities = get_cluster_nodes(
             self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
-            pod_entities, namespace=self.namespace)
+            pod_container_entities, namespace=self.namespace)
 
         service_entities = get_cluster_services(
             self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
@@ -119,13 +119,10 @@ class Discovery:
             postgresql_cluster_entities, self.cluster_id, self.alias, self.environment, self.region,
             self.infrastructure_account, self.postgres_user, self.postgres_pass)
 
-        all_current_entities = (
-            pod_entities + node_entities + service_entities + replicaset_entities + daemonset_entities +
-            ingress_entities + statefulset_entities + postgresql_cluster_entities + postgresql_cluster_member_entities +
-            postgresql_database_entities
-        )
-
-        return all_current_entities
+        return list(itertools.chain(
+            pod_container_entities, node_entities, service_entities, replicaset_entities,
+            daemonset_entities, ingress_entities, statefulset_entities, postgresql_cluster_entities,
+            postgresql_cluster_member_entities, postgresql_database_entities))
 
 
 def get_all(kube_client, kube_func, namespace=None) -> list:
@@ -139,24 +136,27 @@ def get_all(kube_client, kube_func, namespace=None) -> list:
     return items
 
 
-def add_labels_to_entity(entity: dict, labels: dict) -> dict:
-    for label, val in labels.items():
-        if label in (PROTECTED_FIELDS + SKIPPED_ANNOTATIONS):
+def entity_labels(obj: dict, *sources: str) -> dict:
+    result = {}
+
+    for key in sources:
+        for label, val in obj['metadata'].get(key, {}).items():
             if label in PROTECTED_FIELDS:
                 logger.warning('Skipping label [{}:{}] as it is in Protected entity fields {}'.format(
                     label, val, PROTECTED_FIELDS))
-            continue
+            elif label in SKIPPED_ANNOTATIONS:
+                pass
+            else:
+                result[label] = val
 
-        entity[label] = val
-
-    return entity
+    return result
 
 
-def get_cluster_pods(kube_client, cluster_id, alias, environment, region, infrastructure_account, namespace=None):
+def get_cluster_pods_and_containers(
+        kube_client, cluster_id, alias, environment, region, infrastructure_account, namespace=None):
     """
     Return all Pods as ZMON entities.
     """
-    entities = []
 
     pods = get_all(kube_client, kube_client.get_pods, namespace)
 
@@ -170,9 +170,11 @@ def get_cluster_pods(kube_client, cluster_id, alias, environment, region, infras
         container_statuses = {c['name']: c for c in obj['status']['containerStatuses']}
         conditions = {c['type']: c['status'] for c in obj['status']['conditions']}
 
-        entity = {
-            'id': 'pod-{}-{}[{}]'.format(pod.name, pod.namespace, cluster_id),
-            'type': POD_TYPE,
+        pod_labels = entity_labels(obj, 'labels')
+        pod_annotations = entity_labels(obj, 'annotations')
+
+        # Properties shared between pod entity and container entity
+        shared_properties = {
             'kube_cluster': cluster_id,
             'alias': alias,
             'environment': environment,
@@ -188,32 +190,53 @@ def get_cluster_pods(kube_client, cluster_id, alias, environment, region, infras
             'pod_host_ip': obj['status'].get('hostIP', ''),
             'pod_node_name': obj['spec']['nodeName'],
 
-            'containers': {
-                c['name']: {
-                    'image': c['image'],
-                    'ready': container_statuses.get(c['name'], {}).get('ready', True),
-                    'restarts': container_statuses.get(c['name'], {}).get('restartCount', 0),
-                    'ports': [p['containerPort'] for p in c.get('ports', []) if 'containerPort' in p],
-                } for c in containers
-            },
-
             'pod_phase': obj['status'].get('phase'),
             'pod_initialized': conditions.get('Initialized', False),
             'pod_ready': conditions.get('Ready', True),
-            'pod_scheduled': conditions.get('PodScheduled', False),
+            'pod_scheduled': conditions.get('PodScheduled', False)
         }
 
-        entity = add_labels_to_entity(entity, obj['metadata'].get('labels', {}))
-        entity = add_labels_to_entity(entity, obj['metadata'].get('annotations', {}))
+        pod_entity = {
+            'id': 'pod-{}-{}[{}]'.format(pod.name, pod.namespace, cluster_id),
+            'type': POD_TYPE,
+            'containers': {}
+        }
 
-        entities.append(entity)
+        pod_entity.update(shared_properties)
+        pod_entity.update(pod_labels)
+        pod_entity.update(pod_annotations)
 
-    return entities
+        for container in containers:
+            container_name = container['name']
+            container_image = container['image']
+            container_ready = container_statuses.get(container['name'], {}).get('ready', False)
+            container_restarts = container_statuses.get(container['name'], {}).get('restartCount', 0)
+            container_ports = [p['containerPort'] for p in container.get('ports', []) if 'containerPort' in p]
+
+            container_entity = {
+                'id': 'container-{}-{}-{}[{}]'.format(pod.name, pod.namespace, container_name, cluster_id),
+                'type': POD_TYPE,
+                'container_name': container_name,
+                'container_image': container_image,
+                'container_ready': container_ready,
+                'container_restarts': container_restarts,
+                'container_ports': container_ports
+            }
+            pod_entity['containers'][container_name] = {
+                'image': container_image,
+                'ready': container_ready,
+                'restarts': container_restarts,
+                'ports': container_ports
+            }
+
+            container_entity.update(pod_labels)
+            container_entity.update(shared_properties)
+            yield container_entity
+
+        yield pod_entity
 
 
 def get_cluster_services(kube_client, cluster_id, alias, environment, region, infrastructure_account, namespace=None):
-    entities = []
-
     endpoints = get_all(kube_client, kube_client.get_endpoints, namespace)
     # number of endpoints per service
     endpoints_map = {e.name: len(e.obj['subsets']) for e in endpoints if e.obj.get('subsets')}
@@ -231,7 +254,7 @@ def get_cluster_services(kube_client, cluster_id, alias, environment, region, in
             if hostname:
                 host = hostname
 
-        entity = {
+        yield {
             'id': 'service-{}-{}[{}]'.format(service.name, service.namespace, cluster_id),
             'type': SERVICE_TYPE,
             'kube_cluster': cluster_id,
@@ -253,15 +276,9 @@ def get_cluster_services(kube_client, cluster_id, alias, environment, region, in
             'endpoints_count': endpoints_map.get(service.name, 0),
         }
 
-        entities.append(entity)
-
-    return entities
-
 
 def get_cluster_nodes(
         kube_client, cluster_id, alias, environment, region, infrastructure_account, pod_entities=None, namespace=None):
-    entities = []
-
     nodes = kube_client.get_nodes()
 
     if not pod_entities:
@@ -269,9 +286,10 @@ def get_cluster_nodes(
 
     node_pod_count = {}
     for pod in pod_entities:
-        name = pod.get('pod_node_name')
-        if name:
-            node_pod_count[name] = node_pod_count.get(name, 0) + 1
+        if pod['type'] == POD_TYPE:
+            name = pod.get('pod_node_name')
+            if name:
+                node_pod_count[name] = node_pod_count.get(name, 0) + 1
 
     for node in nodes:
         obj = node.obj
@@ -319,18 +337,13 @@ def get_cluster_nodes(
             'node_disk_pressure': statuses.get('DiskPressure', False),
         }
 
-        entity = add_labels_to_entity(entity, obj['metadata'].get('labels', {}))
-        entity = add_labels_to_entity(entity, obj['metadata'].get('annotations', {}))
+        entity.update(entity_labels(obj, 'labels', 'annotations'))
 
-        entities.append(entity)
-
-    return entities
+        yield entity
 
 
 def get_cluster_replicasets(kube_client, cluster_id, alias, environment, region, infrastructure_account,
                             namespace=None):
-    entities = []
-
     replicasets = get_all(kube_client, kube_client.get_replicasets, namespace)
 
     for replicaset in replicasets:
@@ -357,18 +370,13 @@ def get_cluster_replicasets(kube_client, cluster_id, alias, environment, region,
             'ready_replicas': obj['status'].get('readyReplicas', 0),
         }
 
-        entity = add_labels_to_entity(entity, obj['metadata'].get('labels', {}))
-        entity = add_labels_to_entity(entity, obj['metadata'].get('annotations', {}))
+        entity.update(entity_labels(obj, 'labels', 'annotations'))
 
-        entities.append(entity)
-
-    return entities
+        yield entity
 
 
 def get_cluster_statefulsets(kube_client, cluster_id, alias, environment, region, infrastructure_account,
                              namespace='default'):
-    entities = []
-
     statefulsets = get_all(kube_client, kube_client.get_statefulsets, namespace)
 
     for statefulset in statefulsets:
@@ -404,18 +412,13 @@ def get_cluster_statefulsets(kube_client, cluster_id, alias, environment, region
             'replicas_status': obj['status'].get('replicas'),
         }
 
-        entity = add_labels_to_entity(entity, obj['metadata'].get('labels', {}))
-        entity = add_labels_to_entity(entity, obj['metadata'].get('annotations', {}))
+        entity.update(entity_labels(obj, 'labels', 'annotations'))
 
-        entities.append(entity)
-
-    return entities
+        yield entity
 
 
 def get_cluster_daemonsets(kube_client, cluster_id, alias, environment, region, infrastructure_account,
                            namespace='default'):
-    entities = []
-
     daemonsets = get_all(kube_client, kube_client.get_daemonsets, namespace)
 
     for daemonset in daemonsets:
@@ -442,18 +445,13 @@ def get_cluster_daemonsets(kube_client, cluster_id, alias, environment, region, 
             'current_count': obj['status'].get('currentNumberScheduled', 0),
         }
 
-        entity = add_labels_to_entity(entity, obj['metadata'].get('labels', {}))
-        entity = add_labels_to_entity(entity, obj['metadata'].get('annotations', {}))
+        entity.update(entity_labels(obj, 'labels', 'annotations'))
 
-        entities.append(entity)
-
-    return entities
+        yield entity
 
 
 def get_cluster_ingresses(kube_client, cluster_id, alias, environment, region, infrastructure_account,
                           namespace='default'):
-    entities = []
-
     ingresses = get_all(kube_client, kube_client.get_ingresses, namespace)
 
     for ingress in ingresses:
@@ -475,11 +473,9 @@ def get_cluster_ingresses(kube_client, cluster_id, alias, environment, region, i
             'ingress_rules': obj['spec'].get('rules', [])
         }
 
-        entity = add_labels_to_entity(entity, obj['metadata'].get('labels', {}))
+        entity.update(entity_labels(obj, 'labels'))
 
-        entities.append(entity)
-
-    return entities
+        yield entity
 
 
 ########################################################################################################################
@@ -507,8 +503,6 @@ def list_postgres_databases(*args, **kwargs):
 
 def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region, infrastructure_account,
                             namespace=None):
-    entities = []
-
     services = get_all(kube_client, kube_client.get_services, namespace)
 
     for service in services:
@@ -522,7 +516,7 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
         service_namespace = obj['metadata']['namespace']
         service_dns_name = '{}.{}.svc.cluster.local'.format(service.name, service_namespace)
 
-        entity = {
+        yield {
             'id': 'pg-{}[{}]'.format(service.name, cluster_id),
             'type': POSTGRESQL_CLUSTER_TYPE,
             'kube_cluster': cluster_id,
@@ -538,15 +532,9 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
             }
         }
 
-        entities.append(entity)
-
-    return entities
-
 
 def get_postgresql_cluster_members(kube_client, cluster_id, alias, environment, region, infrastructure_account,
                                    namespace=None):
-    entities = []
-
     pods = get_all(kube_client, kube_client.get_pods, namespace)
     pvcs = get_all(kube_client, kube_client.get_persistentvolumeclaims, namespace)
     pvs = get_all(kube_client, kube_client.get_persistentvolumes)
@@ -576,7 +564,7 @@ def get_postgresql_cluster_members(kube_client, cluster_id, alias, environment, 
         except:
             ebs_volume_id = ''
 
-        entity = {
+        yield {
             'id': 'pg-{}-{}[{}]'.format(service_dns_name, pod_number, cluster_id),
             'type': POSTGRESQL_CLUSTER_MEMBER_TYPE,
             'kube_cluster': cluster_id,
@@ -591,17 +579,11 @@ def get_postgresql_cluster_members(kube_client, cluster_id, alias, environment, 
             'volume': ebs_volume_id
         }
 
-        entities.append(entity)
-
-    return entities
-
 
 def get_postgresql_databases(postgresql_clusters, cluster_id, alias, environment, region, infrastructure_account,
                              postgres_user, postgres_pass):
     if not (postgres_user and postgres_pass):
-        return []
-
-    entities = []
+        return
 
     for pgcluster in postgresql_clusters:
         dbnames = list_postgres_databases(host=pgcluster['dnsname'],
@@ -611,7 +593,7 @@ def get_postgresql_databases(postgresql_clusters, cluster_id, alias, environment
                                           dbname='postgres',
                                           sslmode='require')
         for db in dbnames:
-            entity = {
+            yield {
                 'id': '{}-{}'.format(db, pgcluster['id']),
                 'type': POSTGRESQL_DATABASE_TYPE,
                 'kube_cluster': cluster_id,
@@ -627,7 +609,3 @@ def get_postgresql_databases(postgresql_clusters, cluster_id, alias, environment
                     db: '{}:{}/{}'.format(pgcluster['dnsname'], POSTGRESQL_DEFAULT_PORT, db)
                 }
             }
-
-            entities.append(entity)
-
-    return entities
