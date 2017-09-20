@@ -215,7 +215,7 @@ def get_cluster_pods_and_containers(
 
             container_entity = {
                 'id': 'container-{}-{}-{}[{}]'.format(pod.name, pod.namespace, container_name, cluster_id),
-                'type': POD_TYPE,
+                'type': CONTAINER_TYPE,
                 'container_name': container_name,
                 'container_image': container_image,
                 'container_ready': container_ready,
