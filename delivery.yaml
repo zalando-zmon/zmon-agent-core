@@ -2,6 +2,7 @@ build_steps:
 - desc: "Install dependencies"
   cmd: |
     apt-get install -q -y --no-install-recommends \
+      git \
       python3.5 \
       python3.5-dev \
       python3-pip \
@@ -19,16 +20,15 @@ build_steps:
   cmd: |
     flake8 .
 
-- desc: "Build Docker Image"
-  cmd: |
-    docker build -t registry-write.opensource.zalan.do/zmon/zmon-agent-core:0.1-a30 .
-
 - desc: "Push Docker Image (if on master) - trigger"
   cmd: |
     IS_PR_BUILD=${CDP_PULL_REQUEST_NUMBER+"true"}
     if [[ ${IS_PR_BUILD} != "true" ]]
     then
-      docker push registry-write.opensource.zalan.do/zmon/zmon-agent-core:0.1-a30
+      RELEASE_VERSION=$(git describe --tags --always --dirty)
+      AGENT_IMAGE=registry-write.opensource.zalan.do/zmon/zmon-agent-core:${RELEASE_VERSION}
     else
-      echo "Image not pushed because the build is not a push to master"
+      AGENT_IMAGE=registry-write.opensource.zalan.do/zmon/zmon-agent-core:${CDP_BUILD_VERSION}
     fi
+    docker build --tag "$AGENT_IMAGE" .
+    docker push "$AGENT_IMAGE"
