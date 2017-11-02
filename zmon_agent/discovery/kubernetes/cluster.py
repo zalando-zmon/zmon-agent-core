@@ -496,7 +496,7 @@ def list_postgres_databases(*args, **kwargs):
              WHERE datname NOT IN('postgres', 'template0', 'template1')
         """)
         return [row[0] for row in cur.fetchall()]
-    except:
+    except Exception:
         logger.exception("Failed to list DBs!")
         return []
 
@@ -561,7 +561,7 @@ def get_postgresql_cluster_members(kube_client, cluster_id, alias, environment, 
                             ebs_volume_id = pv.obj['spec']['awsElasticBlockStore']['volumeID'].split('/')[-1]
                             break  # only one matching item is expected, so when found, we can leave the loop
                     break
-        except:
+        except Exception:
             ebs_volume_id = ''
 
         yield {

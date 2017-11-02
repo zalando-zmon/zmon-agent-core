@@ -82,7 +82,7 @@ def add_new_entities(all_current_entities, existing_entities, zmon_client, dry_r
                 resp = zmon_client.add_entity(entity)
 
                 resp.raise_for_status()
-        except:
+        except Exception:
             logger.exception('Failed to add entity!')
             error_count += 1
 
@@ -126,7 +126,7 @@ def sync(infrastructure_account, region, entity_service, verify, dry_run, interv
                 try:
                     account_entity['errors'] = {'delete_count': delete_err, 'add_count': add_err}
                     zmon_client.add_entity(account_entity)
-                except:
+                except Exception:
                     logger.exception('Failed to add account entity!')
 
             logger.info(
@@ -148,7 +148,7 @@ def sync(infrastructure_account, region, entity_service, verify, dry_run, interv
             time.sleep(interval)
         except KeyboardInterrupt:
             break
-        except:
+        except Exception:
             fail_sleep = interval if interval else 60
             logger.exception('ZMON agent failed. Retrying after {} seconds ...'.format(fail_sleep))
             time.sleep(fail_sleep)
@@ -217,7 +217,7 @@ def main():
             response.raise_for_status()
 
             region = response.text[:-1]
-        except:
+        except Exception:
             logger.error('AWS region was not specified and can not be fetched from instance meta-data!')
             raise
 
