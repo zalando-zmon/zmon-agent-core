@@ -503,6 +503,8 @@ def list_postgres_databases(*args, **kwargs):
 
 def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region, infrastructure_account,
                             namespace=None):
+
+    # TODO in theory clusters should be discovered using CRDs
     services = get_all(kube_client, kube_client.get_services, namespace)
 
     for service in services:
@@ -517,10 +519,11 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
         service_dns_name = '{}.{}.svc.cluster.local'.format(service.name, service_namespace)
 
         # for master we do not use selector at all
-        is_replica = "-replica" if obj["spec"].get("selector") else ""
+        is_replica = True if obj["spec"].get("selector") else False
 
         yield {
-            'id': 'pg-{}{}[{}]'.format(service.name, is_replica, cluster_id),
+            # service.name contains -repl for replica service
+            'id': 'pg-{}[{}]'.format(service.name, cluster_id),
             'type': POSTGRESQL_CLUSTER_TYPE,
             'kube_cluster': cluster_id,
             'account_alias': alias,
