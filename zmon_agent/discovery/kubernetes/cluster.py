@@ -516,8 +516,11 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
         service_namespace = obj['metadata']['namespace']
         service_dns_name = '{}.{}.svc.cluster.local'.format(service.name, service_namespace)
 
+        # for master we do not use selector at all
+        is_replica = "-replica" if obj["spec"].get("selector") else ""
+
         yield {
-            'id': 'pg-{}[{}]'.format(service.name, cluster_id),
+            'id': 'pg-{}{}[{}]'.format(service.name, is_replica, cluster_id),
             'type': POSTGRESQL_CLUSTER_TYPE,
             'kube_cluster': cluster_id,
             'account_alias': alias,
@@ -525,7 +528,8 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
             'created_by': AGENT_TYPE,
             'infrastructure_account': infrastructure_account,
             'region': region,
-
+            'spilo_cluster': labels.get('version'),
+            'spilo_role': "replica" if is_replica else "master",
             'dnsname': service_dns_name,
             'shards': {
                 'postgres': '{}:{}/postgres'.format(service_dns_name, POSTGRESQL_DEFAULT_PORT)
