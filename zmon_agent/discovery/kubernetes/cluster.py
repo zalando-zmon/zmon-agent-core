@@ -533,6 +533,8 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
             'region': region,
             'spilo_cluster': labels.get('version'),
             'spilo_role': "replica" if is_replica else "master",
+            'application': "spilo",
+            'version': labels.get('version'),
             'dnsname': service_dns_name,
             'shards': {
                 'postgres': '{}:{}/postgres'.format(service_dns_name, POSTGRESQL_DEFAULT_PORT)
@@ -592,6 +594,8 @@ def get_postgresql_cluster_members(kube_client, cluster_id, alias, environment, 
             'ip': obj['status']['podIP'],
             'spilo_cluster': cluster_name,
             'spilo_role': labels.get('spilo-role', ''),
+            'application': 'spilo',
+            'version': cluster_name,
             'volume': ebs_volume_id
         }
 
