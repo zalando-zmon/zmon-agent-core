@@ -254,7 +254,7 @@ def get_cluster_services(kube_client, cluster_id, alias, environment, region, in
             if hostname:
                 host = hostname
 
-        yield {
+        entity = {
             'id': 'service-{}-{}[{}]'.format(service.name, service.namespace, cluster_id),
             'type': SERVICE_TYPE,
             'kube_cluster': cluster_id,
@@ -275,6 +275,10 @@ def get_cluster_services(kube_client, cluster_id, alias, environment, region, in
 
             'endpoints_count': endpoints_map.get(service.name, 0),
         }
+
+        entity.update(entity_labels(obj, 'labels', 'annotations'))
+
+        yield entity
 
 
 def get_cluster_nodes(
