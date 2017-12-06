@@ -49,7 +49,7 @@ class Discovery:
         self.cluster_id = os.environ.get('ZMON_AGENT_KUBERNETES_CLUSTER_ID')
         self.alias = os.environ.get('ZMON_AGENT_KUBERNETES_CLUSTER_ALIAS', '')
         self.environment = os.environ.get('ZMON_AGENT_KUBERNETES_CLUSTER_ENVIRONMENT', '')
-
+        self.hosted_zone_format_string = os.environ.get('ZMON_HOSTED_ZONE_FORMAT_STRING', '{}.{}.example.org')
         self.postgres_user = os.environ.get('ZMON_AGENT_POSTGRES_USER')
         self.postgres_pass = os.environ.get('ZMON_AGENT_POSTGRES_PASS')
         if not (self.postgres_user and self.postgres_pass):
@@ -111,10 +111,10 @@ class Discovery:
 
         postgresql_cluster_entities = get_postgresql_clusters(
             self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
-            namespace=self.namespace)
+            self.hosted_zone_format_string, namespace=self.namespace)
         postgresql_cluster_member_entities = get_postgresql_cluster_members(
             self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
-            namespace=self.namespace)
+            self.hosted_zone_format_string, namespace=self.namespace)
         postgresql_database_entities = get_postgresql_databases(
             postgresql_cluster_entities, self.cluster_id, self.alias, self.environment, self.region,
             self.infrastructure_account, self.postgres_user, self.postgres_pass)
@@ -506,7 +506,7 @@ def list_postgres_databases(*args, **kwargs):
 
 
 def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region, infrastructure_account,
-                            namespace=None):
+                            hosted_zone, namespace=None):
 
     # TODO in theory clusters should be discovered using CRDs
     services = get_all(kube_client, kube_client.get_services, namespace)
@@ -542,12 +542,14 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
             'dnsname': service_dns_name,
             'shards': {
                 'postgres': '{}:{}/postgres'.format(service_dns_name, POSTGRESQL_DEFAULT_PORT)
-            }
+            },
+            'deeplink1': '{}/#/clusters/{}'.format(hosted_zone.format('pgui', alias), labels.get('version')),
+            'icon1': 'fa-server'
         }
 
 
 def get_postgresql_cluster_members(kube_client, cluster_id, alias, environment, region, infrastructure_account,
-                                   namespace=None):
+                                   hosted_zone, namespace=None):
     pods = get_all(kube_client, kube_client.get_pods, namespace)
     pvcs = get_all(kube_client, kube_client.get_persistentvolumeclaims, namespace)
     pvs = get_all(kube_client, kube_client.get_persistentvolumes)
@@ -600,7 +602,9 @@ def get_postgresql_cluster_members(kube_client, cluster_id, alias, environment, 
             'spilo_role': labels.get('spilo-role', ''),
             'application': 'spilo',
             'version': cluster_name,
-            'volume': ebs_volume_id
+            'volume': ebs_volume_id,
+            'deeplink1': '{}/#/clusters/{}/{}'.format(hosted_zone.format('pgui', alias), cluster_name, pod.name),
+            'icon1': 'fa-server'
         }
 
 
