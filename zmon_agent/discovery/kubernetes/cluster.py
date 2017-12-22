@@ -109,14 +109,14 @@ class Discovery:
             self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
             namespace=self.namespace)
 
-        postgresql_cluster_entities = get_postgresql_clusters(
+        postgresql_cluster_entities, pce = itertools.tee(get_postgresql_clusters(
             self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
-            self.hosted_zone_format_string, namespace=self.namespace)
+            self.hosted_zone_format_string, namespace=self.namespace))
         postgresql_cluster_member_entities = get_postgresql_cluster_members(
             self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
             self.hosted_zone_format_string, namespace=self.namespace)
         postgresql_database_entities = get_postgresql_databases(
-            postgresql_cluster_entities, self.cluster_id, self.alias, self.environment, self.region,
+            pce, self.cluster_id, self.alias, self.environment, self.region,
             self.infrastructure_account, self.postgres_user, self.postgres_pass)
 
         return list(itertools.chain(
@@ -486,8 +486,6 @@ def get_cluster_ingresses(kube_client, cluster_id, alias, environment, region, i
 # POSTGRESQL   | TODO: move to separate discovery                                                                      #
 ########################################################################################################################
 def list_postgres_databases(*args, **kwargs):
-    logger.info("Trying to list DBs on host: {}".format(kwargs['host']))
-
     try:
         kwargs.update({'connect_timeout': POSTGRESQL_CONNECT_TIMEOUT})
 
@@ -501,7 +499,7 @@ def list_postgres_databases(*args, **kwargs):
         """)
         return [row[0] for row in cur.fetchall()]
     except Exception:
-        logger.exception("Failed to list DBs!")
+        logger.exception("Failed to list DBs on %s", kwargs.get('host', '{no host specified}'))
         return []
 
 
