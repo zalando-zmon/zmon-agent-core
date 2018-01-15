@@ -246,13 +246,15 @@ def get_cluster_services(kube_client, cluster_id, alias, environment, region, in
     for service in services:
         obj = service.obj
 
-        host = obj['spec']['clusterIP']
+        host = obj['spec'].get('clusterIP', None)
         service_type = obj['spec']['type']
         if service_type == 'LoadBalancer':
             ingress = obj['status'].get('loadBalancer', {}).get('ingress', [])
             hostname = ingress[0].get('hostname') if ingress else None
             if hostname:
                 host = hostname
+        elif service_type == 'ExternalName':
+            host = obj['spec']['externalName']
 
         entity = {
             'id': 'service-{}-{}[{}]'.format(service.name, service.namespace, cluster_id),
@@ -264,14 +266,14 @@ def get_cluster_services(kube_client, cluster_id, alias, environment, region, in
             'infrastructure_account': infrastructure_account,
             'region': region,
 
-            'ip': obj['spec']['clusterIP'],
+            'ip': obj['spec'].get('clusterIP', None),
             'host': host,
-            'port': obj['spec']['ports'][0],  # Assume first port is the used one.
+            'port': next(iter(obj['spec'].get('ports', [])), None),  # Assume first port is the used one.
 
             'service_name': service.name,
             'service_namespace': obj['metadata']['namespace'],
             'service_type': service_type,
-            'service_ports': obj['spec']['ports'],  # Could be useful when multiple ports are exposed.
+            'service_ports': obj['spec'].get('ports', None),  # Could be useful when multiple ports are exposed.
 
             'endpoints_count': endpoints_map.get(service.name, 0),
         }
