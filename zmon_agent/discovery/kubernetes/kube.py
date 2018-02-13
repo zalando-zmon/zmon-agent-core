@@ -34,6 +34,9 @@ class Client:
 
         return self.__pykube
 
+    def invalidate_namespace_cache(self):
+        self.__namespaces = None
+
     def get_namespaces(self) -> list:
         if not self.__namespaces:
             self.__namespaces = list(pykube.Namespace.objects(self.client).filter())
