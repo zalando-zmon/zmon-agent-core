@@ -423,7 +423,7 @@ def get_cluster_statefulsets(kube_client, cluster_id, alias, environment, region
         obj = statefulset.obj
 
         # Stale replic set?!
-        if obj['spec']['replicas'] == 0:
+        if obj['spec'].get('replicas', 0) == 0:
             continue
 
         containers = obj['spec'].get('template', {}).get('spec', {}).get('containers', [])
@@ -451,7 +451,7 @@ def get_cluster_statefulsets(kube_client, cluster_id, alias, environment, region
             'replicas': obj['spec'].get('replicas'),
             'replicas_status': obj['status'].get('replicas'),
             'actual_replicas': obj['status'].get('readyReplicas'),
-            'version': obj['metadata']['labels']['version']
+            'version': obj['metadata'].get('labels', {}).get('version', '')
         }
 
         entity.update(entity_labels(obj, 'labels', 'annotations'))
@@ -537,14 +537,14 @@ def list_postgres_databases(*args, **kwargs):
         """)
         return [row[0] for row in cur.fetchall()]
     except Exception:
-        logger.exception("Failed to list DBs on %s", kwargs.get('host', '{no host specified}'))
+        logger.exception('Failed to list DBs on %s', kwargs.get('host', '{no host specified}'))
         return []
 
 
 def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region, infrastructure_account, hosted_zone,
                             statefulsets, namespace=None):
 
-    ssets = [ss for ss in statefulsets]
+    ssets = [ss for ss in statefulsets if 'version' in ss]
 
     # TODO in theory clusters should be discovered using CRDs
     services = get_all(kube_client, kube_client.get_services, namespace)
@@ -553,7 +553,7 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
         obj = service.obj
 
         labels = obj['metadata'].get('labels', {})
-        version = labels.get('version')
+        version = labels.get('version', '')
 
         # we skip non-Spilos and replica services
         if labels.get('application') != 'spilo' or labels.get('spilo-role') == 'replica':
@@ -564,7 +564,7 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
 
         statefulset_error = ''
         ss = {}
-        statefulset = [ss for ss in ssets if ss['version'] == version]
+        statefulset = [ss for ss in ssets if ss.get('version') == version]
 
         if not statefulset:  # can happen when the replica count is 0.In this case we don't have a running cluster.
             statefulset_error = 'There is no statefulset attached'
@@ -616,7 +616,7 @@ def get_postgresql_cluster_members(kube_client, cluster_id, alias, environment, 
         service_dns_name = '{}.{}.svc.cluster.local'.format(labels['version'], pod_namespace)
 
         container = obj['spec']['containers'][0]  # we don't assume more than one container
-        cluster_name = [env['value'] for env in container['env'] if env['name'] == 'SCOPE'][0]
+        cluster_name = [env['value'] for env in container.get('env', []) if env['name'] == 'SCOPE'][0]
 
         ebs_volume_id = ''
         # unfortunately, there appears to be no way of filtering these on the server side :(
@@ -643,10 +643,10 @@ def get_postgresql_cluster_members(kube_client, cluster_id, alias, environment, 
             'region': region,
             'cluster_dns_name': service_dns_name,
             'pod': pod.name,
-            'pod_phase': obj['status']['phase'],
+            'pod_phase': obj.get('status', {}).get('phase', ''),
             'image': container['image'],
             'container_name': container['name'],
-            'ip': obj['status'].get('podIP', ''),
+            'ip': obj.get('status', {}).get('podIP', ''),
             'spilo_cluster': cluster_name,
             'spilo_role': labels.get('spilo-role', ''),
             'application': 'spilo',
@@ -673,7 +673,7 @@ def get_postgresql_databases(cluster_id, alias, environment, region, infrastruct
                                           sslmode='require')
         for db in dbnames:
             yield {
-                'id': '{}-{}'.format(db, pgcluster['id']),
+                'id': '{}-{}'.format(db, pgcluster.get('id')),
                 'type': POSTGRESQL_DATABASE_TYPE,
                 'kube_cluster': cluster_id,
                 'alias': alias,
@@ -681,8 +681,8 @@ def get_postgresql_databases(cluster_id, alias, environment, region, infrastruct
                 'created_by': AGENT_TYPE,
                 'infrastructure_account': infrastructure_account,
                 'region': region,
-                'version': pgcluster['version'],
-                'postgresql_cluster': pgcluster['id'],
+                'version': pgcluster.get('version'),
+                'postgresql_cluster': pgcluster.get('id'),
                 'database_name': db,
                 'shards': {
                     db: '{}:{}/{}'.format(pgcluster['dnsname'], POSTGRESQL_DEFAULT_PORT, db)
@@ -690,11 +690,11 @@ def get_postgresql_databases(cluster_id, alias, environment, region, infrastruct
                 'role': 'master'
             }
 
-            if pgcluster['expected_replica_count'] > 1:  # the first k8s replica is the master itself
-                name_parts = pgcluster['dnsname'].split('.')
+            if pgcluster.get('expected_replica_count', 0) > 1:  # the first k8s replica is the master itself
+                name_parts = pgcluster.get('dnsname').split('.')
                 repl_dnsname = '.'.join([name_parts[0] + '-repl'] + name_parts[1:])
                 yield {
-                    'id': '{}-repl-{}'.format(db, pgcluster['id']),
+                    'id': '{}-repl-{}'.format(db, pgcluster.get('id')),
                     'type': POSTGRESQL_DATABASE_REPLICA_TYPE,
                     'kube_cluster': cluster_id,
                     'alias': alias,
@@ -702,8 +702,8 @@ def get_postgresql_databases(cluster_id, alias, environment, region, infrastruct
                     'created_by': AGENT_TYPE,
                     'infrastructure_account': infrastructure_account,
                     'region': region,
-                    'version': pgcluster['version'],
-                    'postgresql_cluster': pgcluster['id'],
+                    'version': pgcluster.get('version'),
+                    'postgresql_cluster': pgcluster.get('id'),
                     'database_name': db,
                     'shards': {
                         db: '{}:{}/{}'.format(repl_dnsname, POSTGRESQL_DEFAULT_PORT, db)
