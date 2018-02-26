@@ -6,7 +6,13 @@ import itertools
 import os
 import sys
 import logging
+import traceback
+
 import psycopg2
+
+from opentracing.ext import tags as ot_tags
+
+from opentracing_utils import trace, extract_span_from_kwargs, remove_span_from_kwargs
 
 from . import kube
 
@@ -66,6 +72,9 @@ class Discovery:
         self.region = region
         self.infrastructure_account = infrastructure_account
 
+    def get_discovery_tags(self) -> dict:
+        return {'cluster_id': self.cluster_id, 'alias': self.alias, 'environment': self.environment}
+
     def get_filter_query(self) -> dict:
         return {'created_by': AGENT_TYPE, 'kube_cluster': self.cluster_id}
 
@@ -83,6 +92,7 @@ class Discovery:
 
         return entity
 
+    @trace(tags={'discovery': 'kubernetes'})
     def get_entities(self) -> list:
 
         self.kube_client.invalidate_namespace_cache()
@@ -124,9 +134,9 @@ class Discovery:
         postgresql_cluster_member_entities = get_postgresql_cluster_members(
             self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
             self.hosted_zone_format_string, namespace=self.namespace)
-        postgresql_database_entities = get_postgresql_databases(self.cluster_id, self.alias, self.environment,
-                                                                self.region, self.infrastructure_account,
-                                                                self.postgres_user, self.postgres_pass, pce)
+        postgresql_database_entities = get_postgresql_databases(
+            self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account, self.postgres_user,
+            self.postgres_pass, pce)
 
         return list(itertools.chain(
             pod_container_entities, node_entities, namespace_entities, service_entities, replicaset_entities,
@@ -134,9 +144,9 @@ class Discovery:
             postgresql_cluster_member_entities, postgresql_database_entities))
 
 
-def get_all(kube_client, kube_func, namespace=None) -> list:
+@trace()
+def get_all(kube_client, kube_func, namespace=None, **kwargs) -> list:
     items = []
-
     namespaces = [namespace] if namespace else [ns.name for ns in kube_client.get_namespaces()]
 
     for ns in namespaces:
@@ -161,13 +171,15 @@ def entity_labels(obj: dict, *sources: str) -> dict:
     return result
 
 
+@trace(tags={'kubernetes': 'pod'}, pass_span=True)
 def get_cluster_pods_and_containers(
-        kube_client, cluster_id, alias, environment, region, infrastructure_account, namespace=None):
+        kube_client, cluster_id, alias, environment, region, infrastructure_account, namespace=None, **kwargs):
     """
     Return all Pods as ZMON entities.
     """
+    current_span = extract_span_from_kwargs(**kwargs)
 
-    pods = get_all(kube_client, kube_client.get_pods, namespace)
+    pods = get_all(kube_client, kube_client.get_pods, namespace, span=current_span)
 
     for pod in pods:
         if not pod.ready:
@@ -245,12 +257,16 @@ def get_cluster_pods_and_containers(
         yield pod_entity
 
 
-def get_cluster_services(kube_client, cluster_id, alias, environment, region, infrastructure_account, namespace=None):
-    endpoints = get_all(kube_client, kube_client.get_endpoints, namespace)
+@trace(tags={'kubernetes': 'service'}, pass_span=True)
+def get_cluster_services(
+        kube_client, cluster_id, alias, environment, region, infrastructure_account, namespace=None, **kwargs):
+    current_span = extract_span_from_kwargs(**kwargs)
+
+    endpoints = get_all(kube_client, kube_client.get_endpoints, namespace, span=current_span)
     # number of endpoints per service
     endpoints_map = {e.name: len(e.obj['subsets']) for e in endpoints if e.obj.get('subsets')}
 
-    services = get_all(kube_client, kube_client.get_services, namespace)
+    services = get_all(kube_client, kube_client.get_services, namespace, span=current_span)
 
     for service in services:
         obj = service.obj
@@ -292,8 +308,12 @@ def get_cluster_services(kube_client, cluster_id, alias, environment, region, in
         yield entity
 
 
+@trace(tags={'kubernetes': 'node'}, pass_span=True)
 def get_cluster_nodes(
-        kube_client, cluster_id, alias, environment, region, infrastructure_account, pod_entities=None, namespace=None):
+        kube_client, cluster_id, alias, environment, region, infrastructure_account, pod_entities=None, namespace=None,
+        **kwargs):
+    current_span = extract_span_from_kwargs(**kwargs)  # noqa
+
     nodes = kube_client.get_nodes()
 
     if not pod_entities:
@@ -357,7 +377,11 @@ def get_cluster_nodes(
         yield entity
 
 
-def get_cluster_namespaces(kube_client, cluster_id, alias, environment, region, infrastructure_account, namespace=None):
+@trace(tags={'kubernetes': 'namespace'}, pass_span=True)
+def get_cluster_namespaces(
+        kube_client, cluster_id, alias, environment, region, infrastructure_account, namespace=None, **kwargs):
+
+    current_span = extract_span_from_kwargs(**kwargs)  # noqa
 
     for ns in kube_client.get_namespaces():
         obj = ns.obj
@@ -382,9 +406,12 @@ def get_cluster_namespaces(kube_client, cluster_id, alias, environment, region, 
         yield entity
 
 
+@trace(tags={'kubernetes': 'replicaset'}, pass_span=True)
 def get_cluster_replicasets(kube_client, cluster_id, alias, environment, region, infrastructure_account,
-                            namespace=None):
-    replicasets = get_all(kube_client, kube_client.get_replicasets, namespace)
+                            namespace=None, **kwargs):
+    current_span = extract_span_from_kwargs(**kwargs)
+
+    replicasets = get_all(kube_client, kube_client.get_replicasets, namespace, span=current_span)
 
     for replicaset in replicasets:
         obj = replicaset.obj
@@ -415,9 +442,12 @@ def get_cluster_replicasets(kube_client, cluster_id, alias, environment, region,
         yield entity
 
 
+@trace(tags={'kubernetes': 'statefulset'}, pass_span=True)
 def get_cluster_statefulsets(kube_client, cluster_id, alias, environment, region, infrastructure_account,
-                             namespace='default'):
-    statefulsets = get_all(kube_client, kube_client.get_statefulsets, namespace)
+                             namespace='default', **kwargs):
+    current_span = extract_span_from_kwargs(**kwargs)
+
+    statefulsets = get_all(kube_client, kube_client.get_statefulsets, namespace, span=current_span)
 
     for statefulset in statefulsets:
         obj = statefulset.obj
@@ -459,9 +489,12 @@ def get_cluster_statefulsets(kube_client, cluster_id, alias, environment, region
         yield entity
 
 
+@trace(tags={'kubernetes': 'daemonset'}, pass_span=True)
 def get_cluster_daemonsets(kube_client, cluster_id, alias, environment, region, infrastructure_account,
-                           namespace='default'):
-    daemonsets = get_all(kube_client, kube_client.get_daemonsets, namespace)
+                           namespace='default', **kwargs):
+    current_span = extract_span_from_kwargs(**kwargs)
+
+    daemonsets = get_all(kube_client, kube_client.get_daemonsets, namespace, span=current_span)
 
     for daemonset in daemonsets:
         obj = daemonset.obj
@@ -492,9 +525,12 @@ def get_cluster_daemonsets(kube_client, cluster_id, alias, environment, region, 
         yield entity
 
 
+@trace(tags={'kubernetes': 'ingress'}, pass_span=True)
 def get_cluster_ingresses(kube_client, cluster_id, alias, environment, region, infrastructure_account,
-                          namespace='default'):
-    ingresses = get_all(kube_client, kube_client.get_ingresses, namespace)
+                          namespace='default', **kwargs):
+    current_span = extract_span_from_kwargs(**kwargs)
+
+    ingresses = get_all(kube_client, kube_client.get_ingresses, namespace, span=current_span)
 
     for ingress in ingresses:
         obj = ingress.obj
@@ -523,31 +559,47 @@ def get_cluster_ingresses(kube_client, cluster_id, alias, environment, region, i
 ########################################################################################################################
 # POSTGRESQL   | TODO: move to separate discovery                                                                      #
 ########################################################################################################################
+@trace(tags={'kubernetes': 'postgres'}, pass_span=True)
 def list_postgres_databases(*args, **kwargs):
+    current_span = extract_span_from_kwargs(**kwargs)
+    kwargs = remove_span_from_kwargs(**kwargs)
+
     try:
+        query = """
+            SELECT datname
+              FROM pg_database
+             WHERE datname NOT IN('postgres', 'template0', 'template1')
+        """
+
+        current_span.set_tag(ot_tags.PEER_ADDRESS,
+                             'psql://{}:{}'.format(kwargs.get('host'), kwargs.get('port')))
+        current_span.set_tag(ot_tags.DATABASE_INSTANCE, kwargs.get('dbname'))
+        current_span.set_tag(ot_tags.DATABASE_STATEMENT, query)
+
         kwargs.update({'connect_timeout': POSTGRESQL_CONNECT_TIMEOUT})
 
         conn = psycopg2.connect(*args, **kwargs)
 
         cur = conn.cursor()
-        cur.execute("""
-            SELECT datname
-              FROM pg_database
-             WHERE datname NOT IN('postgres', 'template0', 'template1')
-        """)
+        cur.execute(query)
         return [row[0] for row in cur.fetchall()]
     except Exception:
+        current_span.set_tag('error', True)
+        current_span.log_kv({'exception': traceback.format_exc()})
         logger.exception('Failed to list DBs on %s', kwargs.get('host', '{no host specified}'))
         return []
 
 
+@trace(tags={'kubernetes': 'postgres'}, pass_span=True)
 def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region, infrastructure_account, hosted_zone,
-                            statefulsets, namespace=None):
+                            statefulsets, namespace=None, **kwargs):
+
+    current_span = extract_span_from_kwargs(**kwargs)
 
     ssets = [ss for ss in statefulsets if 'version' in ss]
 
     # TODO in theory clusters should be discovered using CRDs
-    services = get_all(kube_client, kube_client.get_services, namespace)
+    services = get_all(kube_client, kube_client.get_services, namespace, span=current_span)
 
     for service in services:
         obj = service.obj
@@ -597,11 +649,14 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
         }
 
 
+@trace(tags={'kubernetes': 'postgres'}, pass_span=True)
 def get_postgresql_cluster_members(kube_client, cluster_id, alias, environment, region, infrastructure_account,
-                                   hosted_zone, namespace=None):
-    pods = get_all(kube_client, kube_client.get_pods, namespace)
-    pvcs = get_all(kube_client, kube_client.get_persistentvolumeclaims, namespace)
-    pvs = get_all(kube_client, kube_client.get_persistentvolumes)
+                                   hosted_zone, namespace=None, **kwargs):
+    current_span = extract_span_from_kwargs(**kwargs)
+
+    pods = get_all(kube_client, kube_client.get_pods, namespace, span=current_span)
+    pvcs = get_all(kube_client, kube_client.get_persistentvolumeclaims, namespace, span=current_span)
+    pvs = get_all(kube_client, kube_client.get_persistentvolumes, span=current_span)
 
     for pod in pods:
         obj = pod.obj
@@ -659,8 +714,9 @@ def get_postgresql_cluster_members(kube_client, cluster_id, alias, environment, 
         }
 
 
-def get_postgresql_databases(cluster_id, alias, environment, region, infrastructure_account, postgres_user,
-                             postgres_pass, postgresql_clusters):
+@trace(tags={'kubernetes': 'postgres'})
+def get_postgresql_databases(cluster_id, alias, environment, region, infrastructure_account,
+                             postgres_user, postgres_pass, postgresql_clusters):
     if not (postgres_user and postgres_pass):
         return
 

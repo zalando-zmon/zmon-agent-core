@@ -10,7 +10,7 @@ def get_discovery_agent_name():
 
 
 __all__ = (
-    cluster.Discovery,
-    get_discovery_agent_class,
-    get_discovery_agent_name,
+    'cluster.Discovery',
+    'get_discovery_agent_class',
+    'get_discovery_agent_name',
 )
