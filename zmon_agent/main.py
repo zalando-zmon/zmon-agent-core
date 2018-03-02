@@ -92,19 +92,17 @@ def add_new_entities(all_current_entities, existing_entities, zmon_client, dry_r
     error_count = 0
 
     if not dry_run:
-        try:
-            logger.info('Found {} new entities to be added in ZMON'.format(len(new_entities)))
-            for entity in new_entities:
-                logger.info('Adding new {} entity with ID: {}'.format(entity['type'], entity['id']))
-
+        logger.info('Found {} new or updated entities to be added in ZMON'.format(len(new_entities)))
+        for entity in new_entities:
+            logger.info('Adding new or updated {} entity with ID: {}'.format(entity['type'], entity['id']))
+            try:
                 resp = zmon_client.add_entity(entity)
-
                 resp.raise_for_status()
-        except Exception:
-            current_span.set_tag('error', True)
-            logger.exception('Failed to add entity!')
-            current_span.log_kv({'exception': traceback.format_exc()})
-            error_count += 1
+            except Exception:
+                current_span.set_tag('error', True)
+                logger.exception('Failed to add entity!')
+                current_span.log_kv({'exception': traceback.format_exc(), "entity": entity})
+                error_count += 1
 
     return new_entities, error_count
 
