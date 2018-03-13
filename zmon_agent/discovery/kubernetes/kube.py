@@ -71,3 +71,9 @@ class Client:
 
     def get_persistentvolumeclaims(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
         return pykube.PersistentVolumeClaim.objects(self.client).filter(namespace=namespace)
+
+    def get_jobs(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
+        return pykube.Job.objects(self.client).filter(namespace=namespace)
+
+    def get_cronjobs(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
+        return pykube.CronJob.objects(self.client).filter(namespace=namespace)

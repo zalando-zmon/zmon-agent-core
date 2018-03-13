@@ -28,6 +28,8 @@ REPLICASET_TYPE = 'kube_replicaset'
 STATEFULSET_TYPE = 'kube_statefulset'
 DAEMONSET_TYPE = 'kube_daemonset'
 INGRESS_TYPE = 'kube_ingress'
+JOB_TYPE = 'kube_job'
+CRONJOB_TYPE = 'kube_cronjob'
 
 POSTGRESQL_CLUSTER_TYPE = 'postgresql_cluster'
 POSTGRESQL_CLUSTER_MEMBER_TYPE = 'postgresql_cluster_member'
@@ -127,6 +129,14 @@ class Discovery:
             self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
             namespace=self.namespace)
 
+        job_entities = get_cluster_jobs(
+            self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
+            namespace=self.namespace)
+
+        cronjob_entities = get_cluster_cronjobs(
+            self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
+            namespace=self.namespace)
+
         postgresql_cluster_entities, pce = itertools.tee(
             get_postgresql_clusters(self.kube_client, self.cluster_id, self.alias, self.environment, self.region,
                                     self.infrastructure_account, self.hosted_zone_format_string, sse,
@@ -140,8 +150,8 @@ class Discovery:
 
         return list(itertools.chain(
             pod_container_entities, node_entities, namespace_entities, service_entities, replicaset_entities,
-            daemonset_entities, ingress_entities, statefulset_entities, postgresql_cluster_entities,
-            postgresql_cluster_member_entities, postgresql_database_entities))
+            daemonset_entities, ingress_entities, statefulset_entities, job_entities, cronjob_entities,
+            postgresql_cluster_entities, postgresql_cluster_member_entities, postgresql_database_entities))
 
 
 @trace()
@@ -552,6 +562,77 @@ def get_cluster_ingresses(kube_client, cluster_id, alias, environment, region, i
         }
 
         entity.update(entity_labels(obj, 'labels'))
+
+        yield entity
+
+
+@trace(tags={'kubernetes': 'job'}, pass_span=True)
+def get_cluster_jobs(kube_client, cluster_id, alias, environment, region, infrastructure_account, namespace='default',
+                     **kwargs):
+    current_span = extract_span_from_kwargs(**kwargs)
+
+    jobs = get_all(kube_client, kube_client.get_jobs, namespace, span=current_span)
+
+    for job in jobs:
+        obj = job.obj
+
+        entity = {
+            'id': 'job-{}-{}[{}]'.format(job.name, job.namespace, cluster_id),
+            'type': JOB_TYPE,
+            'kube_cluster': cluster_id,
+            'alias': alias,
+            'environment': environment,
+            'created_by': AGENT_TYPE,
+            'infrastructure_account': infrastructure_account,
+            'region': region,
+
+            'job_name': job.name,
+            'job_namespace': job.namespace,
+
+            'parallelism': obj['spec'].get('parallelism'),
+            'completions': obj['spec'].get('completions'),
+            'backoffLimit': obj['spec'].get('backoffLimit'),
+
+            'failed': obj['status'].get('failed', 0),
+        }
+
+        entity.update(entity_labels(obj, 'labels'))
+
+        yield entity
+
+
+@trace(tags={'kubernetes': 'cronjob'}, pass_span=True)
+def get_cluster_cronjobs(kube_client, cluster_id, alias, environment, region, infrastructure_account,
+                         namespace='default', **kwargs):
+    current_span = extract_span_from_kwargs(**kwargs)
+
+    cronjobs = get_all(kube_client, kube_client.get_cronjobs, namespace, span=current_span)
+
+    for cronjob in cronjobs:
+        obj = cronjob.obj
+
+        entity = {
+            'id': 'cronjob-{}-{}[{}]'.format(cronjob.name, cronjob.namespace, cluster_id),
+            'type': CRONJOB_TYPE,
+            'kube_cluster': cluster_id,
+            'alias': alias,
+            'environment': environment,
+            'created_by': AGENT_TYPE,
+            'infrastructure_account': infrastructure_account,
+            'region': region,
+
+            'cronjob_name': cronjob.name,
+            'cronjob_namespace': cronjob.namespace,
+
+            'concurrencyPolicy': obj['spec'].get('concurrencyPolicy'),
+            'schedule': obj['spec'].get('schedule'),
+            'successfulJobsHistoryLimit': obj['spec'].get('successfulJobsHistoryLimit'),
+            'suspend': obj['spec'].get('suspend'),
+
+            'active_jobs': [j.get('name') for j in obj['status'].get('active', [])]
+        }
+
+        entity.update(entity_labels(obj, 'labels', 'annotations'))
 
         yield entity
 
