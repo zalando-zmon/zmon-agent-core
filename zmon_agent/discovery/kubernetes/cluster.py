@@ -726,7 +726,9 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
             'deeplink1': '{}/#/status/{}'.format(hosted_zone.format('pgui', alias), version),
             'icon1': 'fa-server',
             'deeplink2': '{}/#/clusters/{}'.format(hosted_zone.format('pgview', alias), version),
-            'icon2': 'fa-line-chart'
+            'icon2': 'fa-line-chart',
+            'uid': ss.get('metadata', {}).get('uid', ''),
+            'namespace': ss.get('metadata', {}).get('namespace', '')
         }
 
 
