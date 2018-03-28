@@ -11,6 +11,8 @@ import pykube
 
 import psycopg2
 
+from requests.exceptions import HTTPError
+
 from opentracing.ext import tags as ot_tags
 
 from opentracing_utils import trace, extract_span_from_kwargs, remove_span_from_kwargs
@@ -62,9 +64,13 @@ class PostgreSQL(pykube.objects.NamespacedAPIObject):
 class PostgreSQLClient(kube.Client):
     def __init__(self, config_file_path=None, service_acc_path=kube.DEFAULT_SERVICE_ACC):
         super().__init__(config_file_path, service_acc_path)
+        self.is_operator_present = True
 
     def get_postgresqls(self, namespace=kube.DEFAULT_NAMESPACE) -> pykube.query.Query:
-        return PostgreSQL.objects(self.client).filter(namespace=namespace)
+        try:
+            return PostgreSQL.objects(self.client).filter(namespace=namespace)
+        except HTTPError:  # if the operator is not deployed, this happens
+            self.is_operator_present = False
 
 
 class Discovery:
@@ -154,20 +160,26 @@ class Discovery:
             self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
             namespace=self.namespace)
 
-        postgresql_entities, pge = itertools.tee(get_postgresqls(self.pg_client, self.cluster_id, self.alias,
-                                                                 self.environment, self.region,
-                                                                 self.infrastructure_account, namespace=self.namespace))
+        if is_postgresql_operator_present():
+            postgresql_entities, pge = itertools.tee(
+                get_postgresqls(self.pg_client, self.cluster_id, self.alias,
+                                self.environment, self.region, self.infrastructure_account, namespace=self.namespace))
 
-        postgresql_cluster_entities, pce = itertools.tee(
-            get_postgresql_clusters(self.kube_client, self.cluster_id, self.alias, self.environment, self.region,
-                                    self.infrastructure_account, self.hosted_zone_format_string, pge, sse,
-                                    namespace=self.namespace))
-        postgresql_cluster_member_entities = get_postgresql_cluster_members(
-            self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
-            self.hosted_zone_format_string, namespace=self.namespace)
-        postgresql_database_entities = get_postgresql_databases(
-            self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account, self.postgres_user,
-            self.postgres_pass, pce)
+            postgresql_cluster_entities, pce = itertools.tee(
+                get_postgresql_clusters(self.kube_client, self.cluster_id, self.alias, self.environment, self.region,
+                                        self.infrastructure_account, self.hosted_zone_format_string, pge, sse,
+                                        namespace=self.namespace))
+            postgresql_cluster_member_entities = get_postgresql_cluster_members(
+                self.kube_client, self.cluster_id, self.alias, self.environment, self.region,
+                self.infrastructure_account, self.hosted_zone_format_string, namespace=self.namespace)
+            postgresql_database_entities = get_postgresql_databases(
+                self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
+                self.postgres_user, self.postgres_pass, pce)
+        else:
+            postgresql_entities = []
+            postgresql_cluster_entities = []
+            postgresql_cluster_member_entities = []
+            postgresql_database_entities = []
 
         return list(itertools.chain(
             pod_container_entities, node_entities, namespace_entities, service_entities, replicaset_entities,
@@ -693,6 +705,12 @@ def list_postgres_databases(*args, **kwargs):
         return []
 
 
+def is_postgresql_operator_present():
+    pg = PostgreSQLClient()
+    return pg.is_operator_present
+
+
+@trace(tags={'kubernetes': 'postgres'}, pass_span=True)
 def get_postgresqls(pg_client, cluster_id, alias, environment, region, infrastructure_account,
                     namespace=None, **kwargs):
 
