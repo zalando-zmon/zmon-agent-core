@@ -46,7 +46,7 @@ PROTECTED_FIELDS = set(('id', 'type', 'infrastructure_account', 'created_by', 'r
 
 SERVICE_ACCOUNT_PATH = '/var/run/secrets/kubernetes.io/serviceaccount'
 
-SKIPPED_ANNOTATIONS = set(('kubernetes.io/created-by'))
+SKIPPED_ANNOTATIONS = set(('kubernetes.io/created-by',))
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler(stream=sys.stdout))
