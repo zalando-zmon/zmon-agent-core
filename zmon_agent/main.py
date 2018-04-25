@@ -121,68 +121,74 @@ def sync(infrastructure_account, region, entity_service, verify, dry_run, interv
             sync_span.log_kv({'sync_interval': interval, 'discovery_plugin_count': 1})
 
             with sync_span:
-                zmon_client = get_clients(entity_service, verify=verify)
+                try:
+                    zmon_client = get_clients(entity_service, verify=verify)
 
-                discovery_tags = discovery.get_discovery_tags()
-                for k, v in discovery_tags.items():
-                    sync_span.set_tag(k, v)
+                    discovery_tags = discovery.get_discovery_tags()
+                    for k, v in discovery_tags.items():
+                        sync_span.set_tag(k, v)
 
-                account_entity = discovery.get_account_entity()
+                    account_entity = discovery.get_account_entity()
 
-                all_current_entities = discovery.get_entities() + [account_entity]
+                    all_current_entities = discovery.get_entities() + [account_entity]
 
-                # ZMON entities
-                query = discovery.get_filter_query()
-                existing_entities = zmon_client.get_entities(query=query)
+                    # ZMON entities
+                    query = discovery.get_filter_query()
+                    existing_entities = zmon_client.get_entities(query=query)
 
-                # Remove non-existing entities
-                existing_ids = get_existing_ids(existing_entities)
+                    # Remove non-existing entities
+                    existing_ids = get_existing_ids(existing_entities)
 
-                current_ids = [entity['id'] for entity in all_current_entities]
+                    current_ids = [entity['id'] for entity in all_current_entities]
 
-                to_be_removed_ids, delete_err = remove_missing_entities(
-                    existing_ids, current_ids, zmon_client, dry_run=dry_run)
+                    to_be_removed_ids, delete_err = remove_missing_entities(
+                        existing_ids, current_ids, zmon_client, dry_run=dry_run)
 
-                # Add new entities
-                new_entities, add_err = add_new_entities(
-                    all_current_entities, existing_entities, zmon_client, dry_run=dry_run)
+                    # Add new entities
+                    new_entities, add_err = add_new_entities(
+                        all_current_entities, existing_entities, zmon_client, dry_run=dry_run)
 
-                logger.info('Found {} new entities from {} entities ({} failed)'.format(
-                    len(new_entities), len(all_current_entities), add_err))
+                    logger.info('Found {} new entities from {} entities ({} failed)'.format(
+                        len(new_entities), len(all_current_entities), add_err))
 
-                sync_span.log_kv({
-                    'new_entities': len(new_entities),
-                    'removed_entities': len(to_be_removed_ids),
-                    'total_entities': len(all_current_entities),
-                })
+                    sync_span.log_kv({
+                        'new_entities': len(new_entities),
+                        'removed_entities': len(to_be_removed_ids),
+                        'total_entities': len(all_current_entities),
+                    })
 
-                # Add account entity - always!
-                if not dry_run:
-                    try:
-                        account_entity['errors'] = {'delete_count': delete_err, 'add_count': add_err}
-                        sync_span.log_kv({'delete_error_count': delete_err, 'add_error_count': add_err})
-                        zmon_client.add_entity(account_entity)
-                    except Exception:
-                        sync_span.set_tag('error', True)
-                        sync_span.set_tag('local-entity-error', True)
-                        sync_span.log_kv({'exception': traceback.format_exc()})
-                        logger.exception('Failed to add account entity!')
+                    # Add account entity - always!
+                    if not dry_run:
+                        try:
+                            account_entity['errors'] = {'delete_count': delete_err, 'add_count': add_err}
+                            sync_span.log_kv({'delete_error_count': delete_err, 'add_error_count': add_err})
+                            zmon_client.add_entity(account_entity)
+                        except Exception:
+                            sync_span.set_tag('error', True)
+                            sync_span.set_tag('local-entity-error', True)
+                            sync_span.log_kv({'exception': traceback.format_exc()})
+                            logger.exception('Failed to add account entity!')
 
-                logger.info(
-                    'ZMON agent completed sync with {} addition errors and {} deletion errors'.format(
-                        add_err, delete_err))
+                    logger.info(
+                        'ZMON agent completed sync with {} addition errors and {} deletion errors'.format(
+                            add_err, delete_err))
 
-                if dry_run:
-                    output = {
-                        'to_be_removed_ids': to_be_removed_ids,
-                        'new_entities': new_entities
-                    }
+                    if dry_run:
+                        output = {
+                            'to_be_removed_ids': to_be_removed_ids,
+                            'new_entities': new_entities
+                        }
 
-                    print(json.dumps(output, indent=4))
+                        print(json.dumps(output, indent=4))
 
-                if not interval:
-                    logger.info('ZMON agent running once. Exiting!')
-                    break
+                except Exception:
+                    sync_span.set_tag('error', True)
+                    sync_span.log_kv({'exception': traceback.format_exc()})
+                    logger.exception('Failed to complete sync operation!')
+
+            if not interval:
+                logger.info('ZMON agent running once. Exiting!')
+                break
 
             logger.info('ZMON agent sleeping for {} seconds ...'.format(interval))
             time.sleep(interval)

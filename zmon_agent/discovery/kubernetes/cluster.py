@@ -42,7 +42,7 @@ POSTGRESQL_CONNECT_TIMEOUT = os.environ.get('ZMON_AGENT_POSTGRESQL_CONNECT_TIMEO
 
 INSTANCE_TYPE_LABEL = 'beta.kubernetes.io/instance-type'
 
-PROTECTED_FIELDS = set(('id', 'type', 'infrastructure_account', 'created_by', 'region'))
+PROTECTED_FIELDS = set(('id', 'type', 'infrastructure_account', 'created_by', 'region', 'team'))
 
 SERVICE_ACCOUNT_PATH = '/var/run/secrets/kubernetes.io/serviceaccount'
 
@@ -123,8 +123,10 @@ class Discovery:
 
         return entity
 
-    @trace(tags={'discovery': 'kubernetes'})
-    def get_entities(self) -> list:
+    @trace(tags={'discovery': 'kubernetes'}, pass_span=True)
+    def get_entities(self, **kwargs) -> list:
+
+        current_span = extract_span_from_kwargs(**kwargs)
 
         self.kube_client.invalidate_namespace_cache()
 
@@ -166,26 +168,31 @@ class Discovery:
             self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
             namespace=self.namespace)
 
-        if is_postgresql_operator_present():
-            postgresql_entities, pge = itertools.tee(
-                get_postgresqls(self.pg_client, self.cluster_id, self.alias,
-                                self.environment, self.region, self.infrastructure_account, namespace=self.namespace))
+        postgresql_entities = []
+        postgresql_cluster_entities = []
+        postgresql_cluster_member_entities = []
+        postgresql_database_entities = []
 
-            postgresql_cluster_entities, pce = itertools.tee(
-                get_postgresql_clusters(self.kube_client, self.cluster_id, self.alias, self.environment, self.region,
-                                        self.infrastructure_account, self.hosted_zone_format_string, pge, sse,
-                                        namespace=self.namespace))
-            postgresql_cluster_member_entities = get_postgresql_cluster_members(
-                self.kube_client, self.cluster_id, self.alias, self.environment, self.region,
-                self.infrastructure_account, self.hosted_zone_format_string, namespace=self.namespace)
-            postgresql_database_entities = get_postgresql_databases(
-                self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
-                self.postgres_user, self.postgres_pass, pce)
-        else:
-            postgresql_entities = []
-            postgresql_cluster_entities = []
-            postgresql_cluster_member_entities = []
-            postgresql_database_entities = []
+        if is_postgresql_operator_present():
+            try:
+                postgresql_entities, pge = itertools.tee(
+                    get_postgresqls(self.pg_client, self.cluster_id, self.alias,
+                                    self.environment, self.region, self.infrastructure_account,
+                                    namespace=self.namespace))
+
+                postgresql_cluster_entities, pce = itertools.tee(
+                    get_postgresql_clusters(self.kube_client, self.cluster_id, self.alias, self.environment,
+                                            self.region, self.infrastructure_account, self.hosted_zone_format_string,
+                                            pge, sse, namespace=self.namespace))
+                postgresql_cluster_member_entities = get_postgresql_cluster_members(
+                    self.kube_client, self.cluster_id, self.alias, self.environment, self.region,
+                    self.infrastructure_account, self.hosted_zone_format_string, namespace=self.namespace)
+                postgresql_database_entities = get_postgresql_databases(
+                    self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
+                    self.postgres_user, self.postgres_pass, pce)
+            except Exception:
+                current_span.set_tag('postgres_failed', True)
+                current_span.log_kv({'exception': traceback.format_exc()})
 
         return list(itertools.chain(
             pod_container_entities, node_entities, namespace_entities, service_entities, replicaset_entities,
