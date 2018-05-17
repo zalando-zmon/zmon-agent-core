@@ -16,6 +16,7 @@ from opentracing.ext import tags as ot_tags
 from opentracing_utils import trace, extract_span_from_kwargs, remove_span_from_kwargs
 
 from . import kube
+from . import volumes
 
 
 AGENT_TYPE = 'zmon-kubernetes-agent'
@@ -31,6 +32,7 @@ DAEMONSET_TYPE = 'kube_daemonset'
 INGRESS_TYPE = 'kube_ingress'
 JOB_TYPE = 'kube_job'
 CRONJOB_TYPE = 'kube_cronjob'
+PVC_TYPE = 'kube_persistentvolumeclaim'
 
 POSTGRESQL_CRD_TYPE = 'postgresql'
 POSTGRESQL_CLUSTER_TYPE = 'postgresql_cluster'
@@ -42,11 +44,11 @@ POSTGRESQL_CONNECT_TIMEOUT = os.environ.get('ZMON_AGENT_POSTGRESQL_CONNECT_TIMEO
 
 INSTANCE_TYPE_LABEL = 'beta.kubernetes.io/instance-type'
 
-PROTECTED_FIELDS = set(('id', 'type', 'infrastructure_account', 'created_by', 'region', 'team'))
+PROTECTED_FIELDS = {'id', 'type', 'infrastructure_account', 'created_by', 'region', 'team'}
 
 SERVICE_ACCOUNT_PATH = '/var/run/secrets/kubernetes.io/serviceaccount'
 
-SKIPPED_ANNOTATIONS = set(('kubernetes.io/created-by',))
+SKIPPED_ANNOTATIONS = {'kubernetes.io/created-by'}
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler(stream=sys.stdout))
@@ -160,6 +162,10 @@ class Discovery:
             self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
             namespace=self.namespace)
 
+        persistentvolumeclaim_entities = get_cluster_persistentvolumeclaims(
+            self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
+            namespace=self.namespace)
+
         job_entities = get_cluster_jobs(
             self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
             namespace=self.namespace)
@@ -199,8 +205,8 @@ class Discovery:
         return list(itertools.chain(
             pod_container_entities, node_entities, namespace_entities, service_entities, replicaset_entities,
             daemonset_entities, ingress_entities, statefulset_entities, job_entities, cronjob_entities,
-            postgresql_cluster_entities, postgresql_cluster_member_entities, postgresql_database_entities,
-            postgresql_entities))
+            persistentvolumeclaim_entities, postgresql_cluster_entities, postgresql_cluster_member_entities,
+            postgresql_database_entities, postgresql_entities))
 
 
 @trace()
@@ -641,6 +647,52 @@ def get_cluster_ingresses(kube_client, cluster_id, alias, environment, region, i
         }
 
         entity.update(entity_labels(obj, 'labels'))
+
+        entities.append(entity)
+
+    return entities
+
+
+@trace(tags={'kubernetes': 'persistentvolumeclaim'}, pass_span=True)
+def get_cluster_persistentvolumeclaims(kube_client, cluster_id, alias, environment, region, infrastructure_account,
+                                       namespace='default', **kwargs) -> list:
+    current_span = extract_span_from_kwargs(**kwargs)
+
+    entities = []
+
+    pvcs = get_all(kube_client, kube_client.get_persistentvolumeclaims, namespace, span=current_span)
+    pvs = get_all(kube_client, kube_client.get_persistentvolumes, namespace, span=current_span)
+
+    for pvc in pvcs:
+        obj = pvc.obj
+
+        try:
+            pv = [p for p in pvs if p.name == obj['spec'].get('volumeName')][0]
+        except Exception:
+            current_span.log_kv({'message': 'Cannot find volume for PVC: '.format(pvc.name)})
+            continue
+
+        entity = {
+            'id': 'pvc-{}-{}[{}]'.format(pvc.name, pvc.namespace, cluster_id),
+            'type': PVC_TYPE,
+            'kube_cluster': cluster_id,
+            'alias': alias,
+            'environment': environment,
+            'created_by': AGENT_TYPE,
+            'infrastructure_account': infrastructure_account,
+            'region': region,
+
+            'persistentvolumeclaim_name': pvc.name,
+            'persistentvolumeclaim_namespace': obj['metadata']['namespace'],
+
+            'phase': obj['status'].get('phase'),
+            'access_modes': obj['status'].get('accessModes'),
+        }
+
+        pv_fields = volumes.get_persistentvolume_fields(pv)
+        entity.update(pv_fields)
+
+        entity.update(entity_labels(obj, 'labels', 'annotations'))
 
         entities.append(entity)
 

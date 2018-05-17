@@ -9,6 +9,19 @@ DEFAULT_SERVICE_ACC = '/var/run/secrets/kubernetes.io/serviceaccount'
 DEFAULT_NAMESPACE = 'default'
 
 
+class TimedHTTPClient(pykube.HTTPClient):
+    def __init__(self, config, timeout=10):
+        self.timeout = timeout
+        return super().__init__(config)
+
+    def get_kwargs(self, **kwargs):
+        """Override parent method to add timeout to all requests"""
+        kw = super().get_kwargs(**kwargs)
+        kw['timeout'] = self.timeout
+
+        return kw
+
+
 class Client:
 
     def __init__(self, config_file_path=None, service_acc_path=DEFAULT_SERVICE_ACC):
@@ -27,7 +40,7 @@ class Client:
             else:
                 config = pykube.KubeConfig.from_service_account(path=self.service_acc_path)
 
-            self.__pykube = pykube.HTTPClient(config)
+            self.__pykube = TimedHTTPClient(config)
 
         # Hack to ignore REQUESTS_CA_BUNDLE env variable and respect `session.verify` to service account ca.crt
         self.__pykube.session.trust_env = False
