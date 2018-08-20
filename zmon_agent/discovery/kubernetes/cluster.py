@@ -372,6 +372,11 @@ def get_cluster_services(
             'service_ports': obj['spec'].get('ports', None),  # Could be useful when multiple ports are exposed.
 
             'endpoints_count': endpoints_map.get(service.name, 0),
+
+            'deeplink1': '{}/#/clusters/{}/{}'.format(
+                hosted_zone.format('pgview', alias),
+                service_namespace,
+                version)
         }
 
         entity.update(entity_labels(obj, 'labels', 'annotations'))
