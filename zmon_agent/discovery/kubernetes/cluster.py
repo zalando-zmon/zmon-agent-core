@@ -146,7 +146,13 @@ class Discovery:
             namespace=self.namespace)
 
         service_entities = get_cluster_services(
-            self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
+            self.kube_client,
+            self.cluster_id,
+            self.alias,
+            self.environment,
+            self.region,
+            self.infrastructure_account,
+            self.hosted_zone_format_string,
             namespace=self.namespace)
         replicaset_entities = get_cluster_replicasets(
             self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
@@ -192,7 +198,7 @@ class Discovery:
 
                     postgresql_cluster_member_entities = get_postgresql_cluster_members(
                         self.kube_client, self.cluster_id, self.alias, self.environment, self.region,
-                        self.infrastructure_account, self.hosted_zone_format_string, namespace=self.namespace)
+                        self.infrastructure_account, self.hosted_zone_format_string, namesace=self.namespace)
 
                     postgresql_database_entities = get_postgresql_databases(
                         self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
@@ -327,7 +333,8 @@ def get_cluster_pods_and_containers(
 
 @trace(tags={'kubernetes': 'service'}, pass_span=True)
 def get_cluster_services(
-        kube_client, cluster_id, alias, environment, region, infrastructure_account, namespace=None, **kwargs) -> list:
+        kube_client, cluster_id, alias, environment, region,
+        infrastructure_account, hosted_zone, namespace=None, **kwargs) -> list:
 
     entities = []
 
