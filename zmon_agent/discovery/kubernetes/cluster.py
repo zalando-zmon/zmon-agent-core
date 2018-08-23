@@ -352,6 +352,10 @@ def get_cluster_services(
         elif service_type == 'ExternalName':
             host = obj['spec']['externalName']
 
+        service_namespace = obj['metadata']['namespace']
+        labels = obj['metadata'].get('labels', {})
+        version = labels.get('version', '')
+
         entity = {
             'id': 'service-{}-{}[{}]'.format(service.name, service.namespace, cluster_id),
             'type': SERVICE_TYPE,
@@ -367,7 +371,7 @@ def get_cluster_services(
             'port': next(iter(obj['spec'].get('ports', [])), None),  # Assume first port is the used one.
 
             'service_name': service.name,
-            'service_namespace': obj['metadata']['namespace'],
+            'service_namespace': service_namespace,
             'service_type': service_type,
             'service_ports': obj['spec'].get('ports', None),  # Could be useful when multiple ports are exposed.
 
