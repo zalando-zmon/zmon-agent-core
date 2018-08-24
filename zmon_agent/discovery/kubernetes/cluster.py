@@ -382,15 +382,19 @@ def get_cluster_services(
             'service_type': service_type,
             'service_ports': obj['spec'].get('ports', None),  # Could be useful when multiple ports are exposed.
 
-            'endpoints_count': endpoints_map.get(service.name, 0),
-
-            'deeplink1': '{}/#/clusters/{}/{}'.format(
-                hosted_zone.format('pgview', alias),
-                service_namespace,
-                version)
+            'endpoints_count': endpoints_map.get(service.name, 0)
         }
 
         entity.update(entity_labels(obj, 'labels', 'annotations'))
+
+        if labels.get('application') == 'spilo':
+            # postgres related part
+            entity.update({
+                'deeplink1': '{}/#/clusters/{}/{}'.format(
+                    hosted_zone.format('pgview', alias),
+                    service_namespace,
+                    version)
+            })
 
         entities.append(entity)
 
