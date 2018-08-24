@@ -198,7 +198,7 @@ class Discovery:
 
                     postgresql_cluster_member_entities = get_postgresql_cluster_members(
                         self.kube_client, self.cluster_id, self.alias, self.environment, self.region,
-                        self.infrastructure_account, self.hosted_zone_format_string, namesace=self.namespace)
+                        self.infrastructure_account, self.hosted_zone_format_string, namespace=self.namespace)
 
                     postgresql_database_entities = get_postgresql_databases(
                         self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
