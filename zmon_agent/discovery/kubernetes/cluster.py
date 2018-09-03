@@ -146,7 +146,13 @@ class Discovery:
             namespace=self.namespace)
 
         service_entities = get_cluster_services(
-            self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
+            self.kube_client,
+            self.cluster_id,
+            self.alias,
+            self.environment,
+            self.region,
+            self.infrastructure_account,
+            self.hosted_zone_format_string,
             namespace=self.namespace)
         replicaset_entities = get_cluster_replicasets(
             self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
@@ -327,7 +333,8 @@ def get_cluster_pods_and_containers(
 
 @trace(tags={'kubernetes': 'service'}, pass_span=True)
 def get_cluster_services(
-        kube_client, cluster_id, alias, environment, region, infrastructure_account, namespace=None, **kwargs) -> list:
+        kube_client, cluster_id, alias, environment, region,
+        infrastructure_account, hosted_zone, namespace=None, **kwargs) -> list:
 
     entities = []
 
@@ -352,6 +359,10 @@ def get_cluster_services(
         elif service_type == 'ExternalName':
             host = obj['spec']['externalName']
 
+        service_namespace = obj['metadata']['namespace']
+        labels = obj['metadata'].get('labels', {})
+        version = labels.get('version', '')
+
         entity = {
             'id': 'service-{}-{}[{}]'.format(service.name, service.namespace, cluster_id),
             'type': SERVICE_TYPE,
@@ -367,14 +378,23 @@ def get_cluster_services(
             'port': next(iter(obj['spec'].get('ports', [])), None),  # Assume first port is the used one.
 
             'service_name': service.name,
-            'service_namespace': obj['metadata']['namespace'],
+            'service_namespace': service_namespace,
             'service_type': service_type,
             'service_ports': obj['spec'].get('ports', None),  # Could be useful when multiple ports are exposed.
 
-            'endpoints_count': endpoints_map.get(service.name, 0),
+            'endpoints_count': endpoints_map.get(service.name, 0)
         }
 
         entity.update(entity_labels(obj, 'labels', 'annotations'))
+
+        if labels.get('application') == 'spilo':
+            # postgres related part
+            entity.update({
+                'deeplink1': '{}/#/clusters/{}/{}'.format(
+                    hosted_zone.format('pgview', alias),
+                    service_namespace,
+                    version)
+            })
 
         entities.append(entity)
 
