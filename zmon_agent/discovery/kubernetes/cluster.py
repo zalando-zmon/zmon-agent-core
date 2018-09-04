@@ -286,7 +286,8 @@ def get_cluster_pods_and_containers(
             'pod_phase': obj['status'].get('phase'),
             'pod_initialized': conditions.get('Initialized', False),
             'pod_ready': conditions.get('Ready', True),
-            'pod_scheduled': conditions.get('PodScheduled', False)
+            'pod_scheduled': conditions.get('PodScheduled', False),
+            'pod_start': obj['status'].get('startTime')
         }
 
         pod_entity = {
