@@ -17,6 +17,7 @@ from opentracing_utils import trace, extract_span_from_kwargs, remove_span_from_
 
 from . import kube
 from . import volumes
+from . import kube_resources
 
 
 AGENT_TYPE = 'zmon-kubernetes-agent'
@@ -226,6 +227,16 @@ def get_all(kube_client, kube_func, namespace=None, **kwargs) -> list:
     return items
 
 
+def parse_resources(resources):
+    result = {}
+    for resource_group in ('requests', 'limits'):
+        raw_resources = resources.get(resource_group)
+        if raw_resources:
+            converted = {name: kube_resources.parse_resource(value) for name, value in raw_resources.items()}
+            result[resource_group] = converted
+    return result
+
+
 def entity_labels(obj: dict, *sources: str) -> dict:
     result = {}
 
@@ -307,6 +318,11 @@ def get_cluster_pods_and_containers(
             container_restarts = container_statuses.get(container['name'], {}).get('restartCount', 0)
             container_ports = [p['containerPort'] for p in container.get('ports', []) if 'containerPort' in p]
 
+            try:
+                container_resources = parse_resources(container.get('resources', {}))
+            except Exception:
+                container_resources = None
+
             container_entity = {
                 'id': 'container-{}-{}-{}[{}]'.format(pod.name, pod.namespace, container_name, cluster_id),
                 'type': CONTAINER_TYPE,
@@ -314,13 +330,15 @@ def get_cluster_pods_and_containers(
                 'container_image': container_image,
                 'container_ready': container_ready,
                 'container_restarts': container_restarts,
-                'container_ports': container_ports
+                'container_ports': container_ports,
+                'resources': container_resources
             }
             pod_entity['containers'][container_name] = {
                 'image': container_image,
                 'ready': container_ready,
                 'restarts': container_restarts,
-                'ports': container_ports
+                'ports': container_ports,
+                'resources': container_resources
             }
 
             container_entity.update(pod_labels)
