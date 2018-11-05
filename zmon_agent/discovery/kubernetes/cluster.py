@@ -27,6 +27,7 @@ CONTAINER_TYPE = 'kube_pod_container'
 NAMESPACE_TYPE = 'kube_namespace'
 SERVICE_TYPE = 'kube_service'
 NODE_TYPE = 'kube_node'
+DEPLOYMENT_TYPE = 'kube_deployment'
 REPLICASET_TYPE = 'kube_replicaset'
 STATEFULSET_TYPE = 'kube_statefulset'
 DAEMONSET_TYPE = 'kube_daemonset'
@@ -155,6 +156,10 @@ class Discovery:
             self.infrastructure_account,
             self.hosted_zone_format_string,
             namespace=self.namespace)
+
+        deployment_entities = get_cluster_deployments(
+            self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
+            namespace=self.namespace)
         replicaset_entities = get_cluster_replicasets(
             self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
             namespace=self.namespace)
@@ -210,9 +215,10 @@ class Discovery:
             logger.exception('Failed postgresql discovery!')
 
         return list(itertools.chain(
-            pod_container_entities, node_entities, namespace_entities, service_entities, replicaset_entities,
-            daemonset_entities, ingress_entities, statefulset_entities, job_entities, cronjob_entities,
-            persistentvolumeclaim_entities, postgresql_cluster_entities, postgresql_cluster_member_entities,
+            pod_container_entities, node_entities, namespace_entities, service_entities,
+            deployment_entities, replicaset_entities, daemonset_entities, statefulset_entities,
+            ingress_entities, job_entities, cronjob_entities, persistentvolumeclaim_entities,
+            postgresql_cluster_entities, postgresql_cluster_member_entities,
             postgresql_database_entities, postgresql_entities))
 
 
@@ -517,6 +523,47 @@ def get_cluster_namespaces(
             'region': region,
 
             'namespace_name': ns.name,
+        }
+
+        entity.update(entity_labels(obj, 'labels', 'annotations'))
+
+        entities.append(entity)
+
+    return entities
+
+
+@trace(tags={'kubernetes': 'deployment'}, pass_span=True)
+def get_cluster_deployments(kube_client, cluster_id, alias, environment, region, infrastructure_account,
+                            namespace=None, **kwargs) -> list:
+    current_span = extract_span_from_kwargs(**kwargs)
+
+    entities = []
+
+    deployments = get_all(kube_client, kube_client.get_deployments, namespace, span=current_span)
+
+    for deployment in deployments:
+        obj = deployment.obj
+
+        containers = obj['spec']['template']['spec']['containers']
+
+        entity = {
+            'id': 'deployment-{}-{}[{}]'.format(deployment.name, deployment.namespace, cluster_id),
+            'type': DEPLOYMENT_TYPE,
+            'kube_cluster': cluster_id,
+            'alias': alias,
+            'environment': environment,
+            'created_by': AGENT_TYPE,
+            'infrastructure_account': infrastructure_account,
+            'region': region,
+
+            'deployment_name': deployment.name,
+            'deployment_namespace': obj['metadata']['namespace'],
+
+            'containers': {c['name']: c.get('image', '') for c in containers if 'name' in c},
+
+            'replicas': obj['spec'].get('replicas', 0),
+            'ready_replicas': obj['status'].get('readyReplicas', 0),
+            'updated_replicas': obj['status'].get('updatedReplicas', 0),
         }
 
         entity.update(entity_labels(obj, 'labels', 'annotations'))

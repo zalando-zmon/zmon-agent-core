@@ -67,6 +67,9 @@ class Client:
     def get_daemonsets(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
         return pykube.DaemonSet.objects(self.client).filter(namespace=namespace)
 
+    def get_deployments(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
+        return pykube.Deployment.objects(self.client).filter(namespace=namespace)
+
     def get_replicasets(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
         return pykube.ReplicaSet.objects(self.client).filter(namespace=namespace)
 
