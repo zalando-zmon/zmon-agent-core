@@ -4,8 +4,11 @@ Helper functions for dealing with Kubernetes resource requests & limits
 import re
 
 _UNITS = {
-    'm': 0.001,
-    'K': 1000,
+    "n": 1.0 / 1000000000,
+    "u": 1.0 / 1000000,
+    "m": 1.0 / 1000,
+    "": 1,
+    'k': 1000,
     'M': 1000**2,
     'G': 1000**3,
     'T': 1000**4,
@@ -19,7 +22,7 @@ _UNITS = {
     'Ei': 1024**6
 }
 
-_RESOURCE_REGEX = re.compile(r"""(?P<resource>\d+)(?P<unit>\w+)?""")
+_RESOURCE_REGEX = re.compile(r"""(?P<resource>\d+)(?P<unit>\w*)?""")
 
 
 def parse_resource(resource):
@@ -28,10 +31,16 @@ def parse_resource(resource):
     >>> parse_resource("3")
     3.0
 
-    >>> parse_resource("30m")
-    0.03
+    >>> "{:.09f}".format(parse_resource('3n'))
+    '0.000000003'
 
-    >>> parse_resource("3K")
+    >>> "{:.09f}".format(parse_resource('3u'))
+    '0.000003000'
+
+    >>> "{:.09f}".format(parse_resource('3m'))
+    '0.003000000'
+
+    >>> parse_resource("3k")
     3000.0
 
     >>> parse_resource("3M")
@@ -78,5 +87,4 @@ def parse_resource(resource):
 
     value = float(match.group('resource'))
     unit_name = match.group('unit')
-    unit = _UNITS[unit_name] if unit_name else 1
-    return value * unit
+    return value * _UNITS[unit_name]
