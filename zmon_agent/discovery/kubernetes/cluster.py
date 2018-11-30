@@ -3,6 +3,7 @@
 # TODO: this is pilot implementation!
 
 import itertools
+import json
 import os
 import sys
 import logging
@@ -18,7 +19,6 @@ from opentracing_utils import trace, extract_span_from_kwargs, remove_span_from_
 from . import kube
 from . import volumes
 from . import kube_resources
-
 
 AGENT_TYPE = 'zmon-kubernetes-agent'
 
@@ -43,6 +43,11 @@ POSTGRESQL_DATABASE_TYPE = 'postgresql_database'
 POSTGRESQL_DATABASE_REPLICA_TYPE = 'postgresql_database_replica'
 POSTGRESQL_DEFAULT_PORT = 5432
 POSTGRESQL_CONNECT_TIMEOUT = os.environ.get('ZMON_AGENT_POSTGRESQL_CONNECT_TIMEOUT', 2)
+
+HPA_TYPE = 'kube_hpa'
+
+# Custom Resources
+CREDENTIALSET_TYPE = 'kube_credentialset'
 
 INSTANCE_TYPE_LABEL = 'beta.kubernetes.io/instance-type'
 
@@ -186,6 +191,16 @@ class Discovery:
             self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
             namespace=self.namespace)
 
+        hpa_entities = get_cluster_hpas(
+            self.kube_client, self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
+            namespace=self.namespace
+        )
+
+        pcs_entities = get_cluster_credential_sets(
+            self.kube_client, self.cluster_id, self.alias, self.environment,
+            self.region, self.infrastructure_account, namespace=self.namespace
+        )
+
         postgresql_entities = []
         postgresql_cluster_entities = []
         postgresql_cluster_member_entities = []
@@ -193,22 +208,22 @@ class Discovery:
 
         try:
             if is_postgresql_operator_present(self.config_path):
-                    postgresql_entities = get_postgresqls(
-                        self.pg_client, self.cluster_id, self.alias, self.environment, self.region,
-                        self.infrastructure_account, namespace=self.namespace)
+                postgresql_entities = get_postgresqls(
+                    self.pg_client, self.cluster_id, self.alias, self.environment, self.region,
+                    self.infrastructure_account, namespace=self.namespace)
 
-                    postgresql_cluster_entities = get_postgresql_clusters(
-                        self.kube_client, self.cluster_id, self.alias, self.environment, self.region,
-                        self.infrastructure_account, self.hosted_zone_format_string, postgresql_entities,
-                        statefulset_entities, namespace=self.namespace)
+                postgresql_cluster_entities = get_postgresql_clusters(
+                    self.kube_client, self.cluster_id, self.alias, self.environment, self.region,
+                    self.infrastructure_account, self.hosted_zone_format_string, postgresql_entities,
+                    statefulset_entities, namespace=self.namespace)
 
-                    postgresql_cluster_member_entities = get_postgresql_cluster_members(
-                        self.kube_client, self.cluster_id, self.alias, self.environment, self.region,
-                        self.infrastructure_account, self.hosted_zone_format_string, namespace=self.namespace)
+                postgresql_cluster_member_entities = get_postgresql_cluster_members(
+                    self.kube_client, self.cluster_id, self.alias, self.environment, self.region,
+                    self.infrastructure_account, self.hosted_zone_format_string, namespace=self.namespace)
 
-                    postgresql_database_entities = get_postgresql_databases(
-                        self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
-                        self.postgres_user, self.postgres_pass, postgresql_cluster_entities)
+                postgresql_database_entities = get_postgresql_databases(
+                    self.cluster_id, self.alias, self.environment, self.region, self.infrastructure_account,
+                    self.postgres_user, self.postgres_pass, postgresql_cluster_entities)
         except Exception:
             current_span.set_tag('postgres_failed', True)
             current_span.log_kv({'exception': traceback.format_exc()})
@@ -219,7 +234,7 @@ class Discovery:
             deployment_entities, replicaset_entities, daemonset_entities, statefulset_entities,
             ingress_entities, job_entities, cronjob_entities, persistentvolumeclaim_entities,
             postgresql_cluster_entities, postgresql_cluster_member_entities,
-            postgresql_database_entities, postgresql_entities))
+            postgresql_database_entities, postgresql_entities, hpa_entities, pcs_entities))
 
 
 @trace()
@@ -360,7 +375,6 @@ def get_cluster_pods_and_containers(
 def get_cluster_services(
         kube_client, cluster_id, alias, environment, region,
         infrastructure_account, hosted_zone, namespace=None, **kwargs) -> list:
-
     entities = []
 
     current_span = extract_span_from_kwargs(**kwargs)
@@ -502,7 +516,6 @@ def get_cluster_nodes(
 @trace(tags={'kubernetes': 'namespace'}, pass_span=True)
 def get_cluster_namespaces(
         kube_client, cluster_id, alias, environment, region, infrastructure_account, namespace=None, **kwargs) -> list:
-
     current_span = extract_span_from_kwargs(**kwargs)  # noqa
 
     entities = []
@@ -1128,4 +1141,77 @@ def get_postgresql_databases(cluster_id, alias, environment, region, infrastruct
 
                 entities.append(replicatype_entity)
 
+    return entities
+
+
+@trace(tags={'kubernetes': 'hpa'}, pass_span=True)
+def get_cluster_hpas(kube_client, cluster_id, alias, environment, region, infrastructure_account,
+                     namespace=None, **kwargs) -> list:
+    current_span = extract_span_from_kwargs(**kwargs)
+    entities = []
+
+    hpas = get_all(kube_client, kube_client.get_hpas, namespace, span=current_span)
+
+    for h in hpas:
+        obj = h.obj
+
+        conditions_annotation = obj['metadata']['annotations']['autoscaling.alpha.kubernetes.io/conditions']
+        conditions_list = json.loads(conditions_annotation)
+        conditions = {c['type']: c['status'] == 'True' for c in conditions_list}
+
+        entity = {
+            'id': 'hpa-{}-{}[{}]'.format(h.name, h.namespace, cluster_id),
+            'type': HPA_TYPE,
+            'kube_cluster': cluster_id,
+            'alias': alias,
+            'environment': environment,
+            'created_by': AGENT_TYPE,
+            'infrastructure_account': infrastructure_account,
+            'region': region,
+
+            'hpa_name': h.name,
+            'hpa_namespace': obj['metadata']['namespace'],
+
+            'hpa_desired_replicas': obj['status']['desiredReplicas'],
+            'hpa_current_replicas': obj['status']['currentReplicas'],
+            'hpa_min_replicas': obj['spec']['minReplicas'],
+            'hpa_max_replicas': obj['spec']['maxReplicas'],
+            'able_to_scale': conditions.get('AbleToScale', False),
+            'scaling_active': conditions.get('ScalingActive', False),
+            'scaling_limited': conditions.get('ScalingLimited', False),
+        }
+
+        entity.update(entity_labels(obj, 'labels', 'annotations'))
+
+        entities.append(entity)
+
+    return entities
+
+
+@trace(tags={'kubernetes': 'credentialset'}, pass_span=True)
+def get_cluster_credential_sets(kube_client, cluster_id, alias, environment, region, infrastructure_account,
+                                namespace=None, **kwargs) -> list:
+    current_span = extract_span_from_kwargs(**kwargs)
+    entities = []
+
+    credential_sets = get_all(kube_client, kube_client.get_platformcredentialsets, namespace, span=current_span)
+    for cs in credential_sets:
+        obj = cs.obj
+        entity = {
+            'id': 'pcs-{}-{}[{}]'.format(cs.name, cs.namespace, cluster_id),
+            'type': CREDENTIALSET_TYPE,
+            'kube_cluster': cluster_id,
+            'alias': alias,
+            'environment': environment,
+            'created_by': AGENT_TYPE,
+            'infrastructure_account': infrastructure_account,
+            'region': region,
+            'pcs_name': cs.name,
+            'pcs_namespace': obj['metadata']['namespace'],
+            'errors': obj['status']['errors'],
+            'problems': obj['status']['problems'],
+            'tokens': obj['status'].get('tokens', {})
+        }
+        entity.update(entity_labels(obj, 'labels', 'annotations'))
+        entities.append(entity)
     return entities

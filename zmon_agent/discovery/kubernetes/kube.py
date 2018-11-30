@@ -3,6 +3,7 @@ Wrapper client for Kubernetes API using ``pykube``
 """
 import pykube
 
+from zmon_agent.discovery.kubernetes.crds import PlatformCredentialSet
 
 DEFAULT_SERVICE_ACC = '/var/run/secrets/kubernetes.io/serviceaccount'
 
@@ -93,3 +94,9 @@ class Client:
 
     def get_cronjobs(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
         return pykube.CronJob.objects(self.client).filter(namespace=namespace)
+
+    def get_hpas(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
+        return pykube.HorizontalPodAutoscaler.objects(self.client).filter(namespace=namespace)
+
+    def get_platformcredentialsets(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
+        return PlatformCredentialSet.objects(self.client).filter(namespace=namespace)
