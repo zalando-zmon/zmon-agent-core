@@ -55,7 +55,8 @@ PROTECTED_FIELDS = {'id', 'type', 'infrastructure_account', 'created_by', 'regio
 
 SERVICE_ACCOUNT_PATH = '/var/run/secrets/kubernetes.io/serviceaccount'
 
-SKIPPED_ANNOTATIONS = {'kubernetes.io/created-by'}
+SKIPPED_ANNOTATIONS = {'kubernetes.io/created-by', 'autoscaling.alpha.kubernetes.io/current-metrics',
+                       'autoscaling.alpha.kubernetes.io/metrics', 'autoscaling.alpha.kubernetes.io/conditions'}
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler(stream=sys.stdout))
