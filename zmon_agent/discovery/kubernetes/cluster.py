@@ -867,6 +867,7 @@ def get_cluster_cronjobs(kube_client, cluster_id, alias, environment, region, in
             'schedule': obj['spec'].get('schedule'),
             'successfulJobsHistoryLimit': obj['spec'].get('successfulJobsHistoryLimit'),
             'suspend': obj['spec'].get('suspend'),
+            'last_schedule_time': obj.get('status', {}).get('lastScheduleTime'),
 
             'active_jobs': [j.get('name') for j in obj['status'].get('active', [])]
         }
