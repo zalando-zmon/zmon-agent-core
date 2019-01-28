@@ -932,7 +932,7 @@ def get_postgresqls(pg_client, cluster_id, alias, environment, region, infrastru
             'name': metadata.get('name', ''),
             'id': 'postgresql-{}-{}[{}]'.format(metadata.get('name', ''), metadata.get('namespace', ''), cluster_id),
             'type': POSTGRESQL_CRD_TYPE,
-            'team': metadata.get('labels', {}).get('team', ''),
+            'team_id': metadata.get('labels', {}).get('team', ''),
             'uid': metadata.get('uid'),
             'expected_instance_count': pg.get('spec', {}).get('numberOfInstances'),
             'namespace': metadata.get('namespace', '')
@@ -976,14 +976,14 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
         else:
             ss = statefulset[0]
 
-        postgresql = [pg for pg in pgs if pg['name'] == version]
+        postgresql = [pg for pg in pgs if pg['name'] == version and pg['namespace'] == service_namespace]
 
         pg = {}
         if postgresql:
             pg = postgresql[0]
 
         entity = {
-            'id': 'pg-{}[{}]'.format(service.name, cluster_id),
+            'id': 'pg-{}-{}[{}]'.format(service.name, service_namespace, cluster_id),
             'type': POSTGRESQL_CLUSTER_TYPE,
             'kube_cluster': cluster_id,
             'account_alias': alias,
