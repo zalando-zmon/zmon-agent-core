@@ -202,6 +202,8 @@ class Discovery:
             self.region, self.infrastructure_account, namespace=self.namespace
         )
 
+        self.pg_client.invalidate_namespace_cache()
+
         postgresql_entities = []
         postgresql_cluster_entities = []
         postgresql_cluster_member_entities = []
