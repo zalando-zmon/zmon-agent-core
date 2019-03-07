@@ -432,10 +432,13 @@ def get_cluster_services(
         if labels.get('application') == 'spilo':
             # postgres related part
             entity.update({
-                'deeplink1': '{}/#/clusters/{}/{}'.format(
+                'deeplink1': '{}/#/status/{}/{}'.format(hosted_zone.format('pgui', alias), service_namespace, version),
+                'icon1': 'fa-server',
+                'deeplink2': '{}/#/clusters/{}/{}'.format(
                     hosted_zone.format('pgview', alias),
                     service_namespace,
-                    version)
+                    version),
+                'icon2': 'fa-line-chart'
             })
 
         entities.append(entity)
