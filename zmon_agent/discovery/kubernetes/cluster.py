@@ -291,7 +291,7 @@ def get_cluster_pods_and_containers(
 
         containers = obj['spec'].get('containers', [])
         container_statuses = {c['name']: c for c in obj['status'].get('containerStatuses', {})}
-        conditions = {c['type']: c['status'] for c in obj['status']['conditions']}
+        conditions = {c['type']: c['status'] for c in obj['status'].get('conditions', [])}
 
         pod_labels = entity_labels(obj, 'labels')
         pod_annotations = entity_labels(obj, 'annotations')
