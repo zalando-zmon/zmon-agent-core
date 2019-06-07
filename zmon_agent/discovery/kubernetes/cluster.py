@@ -1120,7 +1120,8 @@ def get_postgresql_databases(cluster_id, alias, environment, region, infrastruct
                 'shards': {
                     db: '{}:{}/{}'.format(pgcluster['dnsname'], POSTGRESQL_DEFAULT_PORT, db)
                 },
-                'role': 'master'
+                'role': 'master',
+                'namespace': pgcluster.get('namespace')
             }
 
             entities.append(entity)
@@ -1143,7 +1144,8 @@ def get_postgresql_databases(cluster_id, alias, environment, region, infrastruct
                     'shards': {
                         db: '{}:{}/{}'.format(repl_dnsname, POSTGRESQL_DEFAULT_PORT, db)
                     },
-                    'role': 'replica'
+                    'role': 'replica',
+                    'namespace': pgcluster.get('namespace')
                 }
 
                 entities.append(replicatype_entity)
