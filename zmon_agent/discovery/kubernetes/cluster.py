@@ -940,7 +940,8 @@ def get_postgresqls(pg_client, cluster_id, alias, environment, region, infrastru
             'team_id': metadata.get('labels', {}).get('team', ''),
             'uid': metadata.get('uid'),
             'expected_instance_count': pg.get('spec', {}).get('numberOfInstances'),
-            'namespace': metadata.get('namespace', '')
+            'namespace': metadata.get('namespace', ''),
+            'postgresql_version': pg.get('spec', {}).get('postgresql', {}).get('version')
         }
 
         entities.append(entity)
@@ -1011,7 +1012,8 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
             'icon2': 'fa-line-chart',
             'uid': pg.get('uid', ''),
             'namespace': service_namespace,
-            'team_id': pg.get('team_id', '')
+            'team_id': pg.get('team_id', ''),
+            'postgresql_version': pg.get('postgresql_version')
         }
 
         entities.append(entity)
