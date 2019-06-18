@@ -943,6 +943,7 @@ def get_postgresqls(pg_client, cluster_id, alias, environment, region, infrastru
             'expected_instance_count': spec.get('numberOfInstances'),
             'namespace': metadata.get('namespace', ''),
             'spec': spec,
+            'postgresql_version': spec.get('postgresql', {}).get('version')
         }
 
         entities.append(entity)
@@ -957,7 +958,6 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
     current_span = extract_span_from_kwargs(**kwargs)
 
     ssets = [ss for ss in statefulsets if 'version' in ss]
-    pgs = list(postgresqls)
 
     services = get_all(kube_client, kube_client.get_services, namespace, span=current_span)
 
@@ -983,7 +983,7 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
         else:
             ss = statefulset[0]
 
-        postgresql = [pg for pg in pgs if pg['name'] == version and pg['namespace'] == service_namespace]
+        postgresql = [pg for pg in postgresqls if pg['name'] == version and pg['namespace'] == service_namespace]
 
         pg = {}
         if postgresql:
@@ -1014,7 +1014,9 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
             'icon2': 'fa-line-chart',
             'uid': pg.get('uid', ''),
             'namespace': service_namespace,
-            'spec': pg.get('spec', '')
+            'spec': pg.get('spec', ''),
+            'team_id': pg.get('team_id', ''),
+            'postgresql_version': pg.get('postgresql_version')
         }
 
         entities.append(entity)
@@ -1085,7 +1087,9 @@ def get_postgresql_cluster_members(kube_client, cluster_id, alias, environment, 
             'icon1': 'fa-server',
             'deeplink2': '{}/#/clusters/{}/{}/{}'.format(hosted_zone.format('pgview', alias), pod_namespace,
                                                          cluster_name, pod.name),
-            'icon2': 'fa-line-chart'
+            'icon2': 'fa-line-chart',
+            'namespace': pod_namespace,
+            'team_id': labels.get('team')
         }
 
         entities.append(entity)
@@ -1123,7 +1127,9 @@ def get_postgresql_databases(cluster_id, alias, environment, region, infrastruct
                 'shards': {
                     db: '{}:{}/{}'.format(pgcluster['dnsname'], POSTGRESQL_DEFAULT_PORT, db)
                 },
-                'role': 'master'
+                'role': 'master',
+                'namespace': pgcluster.get('namespace'),
+                'team_id': pgcluster.get('team_id')
             }
 
             entities.append(entity)
@@ -1146,7 +1152,9 @@ def get_postgresql_databases(cluster_id, alias, environment, region, infrastruct
                     'shards': {
                         db: '{}:{}/{}'.format(repl_dnsname, POSTGRESQL_DEFAULT_PORT, db)
                     },
-                    'role': 'replica'
+                    'role': 'replica',
+                    'namespace': pgcluster.get('namespace'),
+                    'team_id': pgcluster.get('team_id')
                 }
 
                 entities.append(replicatype_entity)
