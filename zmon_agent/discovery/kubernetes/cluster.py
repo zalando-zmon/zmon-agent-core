@@ -266,10 +266,7 @@ def entity_labels(obj: dict, *sources: str) -> dict:
 
     for key in sources:
         for label, val in obj['metadata'].get(key, {}).items():
-            if label in PROTECTED_FIELDS:
-                logger.warning('Skipping label [{}:{}] as it is in Protected entity fields {}'.format(
-                    label, val, PROTECTED_FIELDS))
-            elif label in SKIPPED_ANNOTATIONS:
+            if label in PROTECTED_FIELDS or label in SKIPPED_ANNOTATIONS:
                 pass
             else:
                 result[label] = val
@@ -289,14 +286,12 @@ def get_cluster_pods_and_containers(
     pods = get_all(kube_client, kube_client.get_pods, namespace, span=current_span)
 
     for pod in pods:
-        if not pod.ready:
-            continue
 
         obj = pod.obj
 
         containers = obj['spec'].get('containers', [])
-        container_statuses = {c['name']: c for c in obj['status']['containerStatuses']}
-        conditions = {c['type']: c['status'] for c in obj['status']['conditions']}
+        container_statuses = {c['name']: c for c in obj['status'].get('containerStatuses', {})}
+        conditions = {c['type']: c['status'] for c in obj['status'].get('conditions', [])}
 
         pod_labels = entity_labels(obj, 'labels')
         pod_annotations = entity_labels(obj, 'annotations')
@@ -316,11 +311,11 @@ def get_cluster_pods_and_containers(
             'pod_name': pod.name,
             'pod_namespace': obj['metadata']['namespace'],
             'pod_host_ip': obj['status'].get('hostIP', ''),
-            'pod_node_name': obj['spec']['nodeName'],
+            'pod_node_name': obj['spec'].get('nodeName', ''),
 
             'pod_phase': obj['status'].get('phase'),
             'pod_initialized': conditions.get('Initialized', False),
-            'pod_ready': conditions.get('Ready', True),
+            'pod_ready': conditions.get('Ready', False),
             'pod_scheduled': conditions.get('PodScheduled', False),
             'pod_start': obj['status'].get('startTime')
         }
