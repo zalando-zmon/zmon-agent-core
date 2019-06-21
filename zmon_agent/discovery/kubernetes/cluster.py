@@ -58,6 +58,8 @@ SERVICE_ACCOUNT_PATH = '/var/run/secrets/kubernetes.io/serviceaccount'
 SKIPPED_ANNOTATIONS = {'kubernetes.io/created-by', 'autoscaling.alpha.kubernetes.io/current-metrics',
                        'autoscaling.alpha.kubernetes.io/metrics', 'autoscaling.alpha.kubernetes.io/conditions'}
 
+NODE_INTERNAL_DNS_ADDRESS = 'InternalDNS'
+
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler(stream=sys.stdout))
 logger.setLevel(logging.INFO)
@@ -466,7 +468,12 @@ def get_cluster_nodes(
 
         addresses = {address['type']: address['address'] for address in obj['status']['addresses']}
         ip = addresses.get('ExternalIP', addresses.get('InternalIP', ''))
-        host = node.obj['metadata']['labels'].get('kubernetes.io/hostname', ip)
+        for addr in node.obj['status']['addresses']:
+            if addr['type'] == NODE_INTERNAL_DNS_ADDRESS:
+                host = addr['address']
+                break
+        else:
+            host = ''
         instance_type = node.obj['metadata']['labels'].get(INSTANCE_TYPE_LABEL, '')
         statuses = {condition['type']: condition['status'] for condition in obj['status']['conditions']}
 
