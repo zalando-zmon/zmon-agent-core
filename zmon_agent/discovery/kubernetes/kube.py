@@ -3,7 +3,10 @@ Wrapper client for Kubernetes API using ``pykube``
 """
 import pykube
 
-from zmon_agent.discovery.kubernetes.crds import PlatformCredentialSet
+from zmon_agent.discovery.kubernetes.crds import (
+    PlatformCredentialSet,
+    AWSIAMRole,
+)
 
 DEFAULT_SERVICE_ACC = '/var/run/secrets/kubernetes.io/serviceaccount'
 
@@ -100,3 +103,6 @@ class Client:
 
     def get_platformcredentialsets(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
         return PlatformCredentialSet.objects(self.client).filter(namespace=namespace)
+
+    def get_awsiamroles(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
+        return AWSIAMRole.objects(self.client).filter(namespace=namespace)
