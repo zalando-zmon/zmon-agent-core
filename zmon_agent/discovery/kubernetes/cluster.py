@@ -49,6 +49,8 @@ HPA_TYPE = 'kube_hpa'
 # Custom Resources
 CREDENTIALSET_TYPE = 'kube_credentialset'
 
+AWSIAMROLE_TYPE = 'kube_awsiamrole'
+
 INSTANCE_TYPE_LABEL = 'beta.kubernetes.io/instance-type'
 
 PROTECTED_FIELDS = {'id', 'type', 'infrastructure_account', 'created_by', 'region', 'team'}
@@ -204,6 +206,11 @@ class Discovery:
             self.region, self.infrastructure_account, namespace=self.namespace
         )
 
+        awsiamrole_entities = get_cluster_awsiamroles(
+            self.kube_client, self.cluster_id, self.alias, self.environment,
+            self.region, self.infrastructure_account, namespace=self.namespace
+        )
+
         self.pg_client.invalidate_namespace_cache()
 
         postgresql_entities = []
@@ -239,7 +246,8 @@ class Discovery:
             deployment_entities, replicaset_entities, daemonset_entities, statefulset_entities,
             ingress_entities, job_entities, cronjob_entities, persistentvolumeclaim_entities,
             postgresql_cluster_entities, postgresql_cluster_member_entities,
-            postgresql_database_entities, postgresql_entities, hpa_entities, pcs_entities))
+            postgresql_database_entities, postgresql_entities, hpa_entities,
+            pcs_entities, awsiamrole_entities))
 
 
 @trace()
@@ -1228,6 +1236,34 @@ def get_cluster_credential_sets(kube_client, cluster_id, alias, environment, reg
             'errors': obj['status']['errors'],
             'problems': obj['status']['problems'],
             'tokens': obj['status'].get('tokens', {})
+        }
+        entity.update(entity_labels(obj, 'labels', 'annotations'))
+        entities.append(entity)
+    return entities
+
+
+@trace(tags={'kubernetes': 'awsiamrole'}, pass_span=True)
+def get_cluster_awsiamroles(kube_client, cluster_id, alias, environment, region, infrastructure_account,
+                            namespace=None, **kwargs) -> list:
+    current_span = extract_span_from_kwargs(**kwargs)
+    entities = []
+
+    awsiamroles = get_all(kube_client, kube_client.get_awsiamroles, namespace, span=current_span)
+    for r in awsiamroles:
+        obj = r.obj
+        entity = {
+            'id': 'awsiamrole-{}-{}[{}]'.format(r.name, r.namespace, cluster_id),
+            'type': AWSIAMROLE_TYPE,
+            'kube_cluster': cluster_id,
+            'alias': alias,
+            'environment': environment,
+            'created_by': AGENT_TYPE,
+            'infrastructure_account': infrastructure_account,
+            'region': region,
+            'awsiamrole_name': r.name,
+            'awsiamrole_namespace': obj['metadata']['namespace'],
+            'role_arn': obj.get('status', {}).get('roleARN', ''),
+            'expiration': obj.get('status', {}).get('expiration', '')
         }
         entity.update(entity_labels(obj, 'labels', 'annotations'))
         entities.append(entity)
