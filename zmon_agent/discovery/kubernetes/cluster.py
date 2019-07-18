@@ -1233,9 +1233,9 @@ def get_cluster_credential_sets(kube_client, cluster_id, alias, environment, reg
             'region': region,
             'pcs_name': cs.name,
             'pcs_namespace': obj['metadata']['namespace'],
-            'errors': obj['status']['errors'],
-            'problems': obj['status']['problems'],
-            'tokens': obj['status'].get('tokens', {})
+            'errors': obj.get('status', {}).get('errors', []),
+            'problems': obj.get('status', {}).get('problems', []),
+            'tokens': obj.get('status', {}).get('tokens', {})
         }
         entity.update(entity_labels(obj, 'labels', 'annotations'))
         entities.append(entity)
