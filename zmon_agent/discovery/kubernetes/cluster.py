@@ -364,7 +364,7 @@ def get_cluster_pods_and_containers(
                 start_time = container_state["running"]["startedAt"]
                 container_running = True
             elif "terminated" in container_state:
-                start_time = container_state["running"]["startedAt"]
+                start_time = container_state["terminated"]["startedAt"]
 
             try:
                 container_resources = parse_resources(container.get('resources', {}))
