@@ -338,9 +338,21 @@ def get_cluster_pods_and_containers(
         for container in containers:
             container_name = container['name']
             container_image = container['image']
-            container_ready = container_statuses.get(container['name'], {}).get('ready', False)
-            container_restarts = container_statuses.get(container['name'], {}).get('restartCount', 0)
+
+            container_status = container_statuses.get(container_name, {})
+            container_ready = container_status.get('ready', False)
+            container_restarts = container_status.get('restartCount', 0)
             container_ports = [p['containerPort'] for p in container.get('ports', []) if 'containerPort' in p]
+
+            start_time = None
+            container_running = False
+
+            container_state = container_status.get("state", {})
+            if "running" in container_state:
+                start_time = container_state["running"]["startedAt"]
+                container_running = True
+            elif "terminated" in container_state:
+                start_time = container_state["running"]["startedAt"]
 
             try:
                 container_resources = parse_resources(container.get('resources', {}))
@@ -355,12 +367,16 @@ def get_cluster_pods_and_containers(
                 'container_ready': container_ready,
                 'container_restarts': container_restarts,
                 'container_ports': container_ports,
+                'start_time': start_time,
+                'running': container_running,
                 'resources': container_resources
             }
             pod_entity['containers'][container_name] = {
                 'image': container_image,
                 'ready': container_ready,
                 'restarts': container_restarts,
+                'start_time': start_time,
+                'running': container_running,
                 'ports': container_ports,
                 'resources': container_resources
             }
