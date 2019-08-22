@@ -942,6 +942,7 @@ def get_postgresqls(pg_client, cluster_id, alias, environment, region, infrastru
     for postgres in postgresqls:
         pg = postgres.obj
         metadata = pg.get('metadata', {})
+        spec = pg.get('spec', {})
 
         entity = {
             'name': metadata.get('name', ''),
@@ -949,9 +950,10 @@ def get_postgresqls(pg_client, cluster_id, alias, environment, region, infrastru
             'type': POSTGRESQL_CRD_TYPE,
             'team_id': metadata.get('labels', {}).get('team', ''),
             'uid': metadata.get('uid'),
-            'expected_instance_count': pg.get('spec', {}).get('numberOfInstances'),
+            'expected_instance_count': spec.get('numberOfInstances'),
             'namespace': metadata.get('namespace', ''),
-            'postgresql_version': pg.get('spec', {}).get('postgresql', {}).get('version')
+            'spec': spec,
+            'postgresql_version': spec.get('postgresql', {}).get('version')
         }
 
         entities.append(entity)
@@ -1022,6 +1024,7 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
             'icon2': 'fa-line-chart',
             'uid': pg.get('uid', ''),
             'namespace': service_namespace,
+            'spec': pg.get('spec', ''),
             'team_id': pg.get('team_id', ''),
             'postgresql_version': pg.get('postgresql_version')
         }
