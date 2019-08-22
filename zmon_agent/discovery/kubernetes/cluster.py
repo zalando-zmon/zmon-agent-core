@@ -284,6 +284,16 @@ def entity_labels(obj: dict, *sources: str) -> dict:
     return result
 
 
+def entity_metadata(obj) -> dict:
+    """Returns a dict of properties common for all Kubernetes entities"""
+    metadata = obj['metadata']
+    return {
+        'namespace': metadata['namespace'],
+        'name': metadata['name'],
+        'deletion_timestamp': metadata.get('deletionTimestamp')
+    }
+
+
 @trace(tags={'kubernetes': 'pod'}, pass_span=True)
 def get_cluster_pods_and_containers(
         kube_client, cluster_id, alias, environment, region, infrastructure_account, namespace=None, **kwargs) -> list:
@@ -305,6 +315,7 @@ def get_cluster_pods_and_containers(
 
         pod_labels = entity_labels(obj, 'labels')
         pod_annotations = entity_labels(obj, 'annotations')
+        common_meta = entity_metadata(obj)
 
         # Properties shared between pod entity and container entity
         shared_properties = {
@@ -339,13 +350,26 @@ def get_cluster_pods_and_containers(
         pod_entity.update(shared_properties)
         pod_entity.update(pod_labels)
         pod_entity.update(pod_annotations)
+        pod_entity.update(common_meta)
 
         for container in containers:
             container_name = container['name']
             container_image = container['image']
-            container_ready = container_statuses.get(container['name'], {}).get('ready', False)
-            container_restarts = container_statuses.get(container['name'], {}).get('restartCount', 0)
+
+            container_status = container_statuses.get(container_name, {})
+            container_ready = container_status.get('ready', False)
+            container_restarts = container_status.get('restartCount', 0)
             container_ports = [p['containerPort'] for p in container.get('ports', []) if 'containerPort' in p]
+
+            start_time = None
+            container_running = False
+
+            container_state = container_status.get("state", {})
+            if "running" in container_state:
+                start_time = container_state["running"]["startedAt"]
+                container_running = True
+            elif "terminated" in container_state:
+                start_time = container_state["terminated"]["startedAt"]
 
             try:
                 container_resources = parse_resources(container.get('resources', {}))
@@ -360,18 +384,23 @@ def get_cluster_pods_and_containers(
                 'container_ready': container_ready,
                 'container_restarts': container_restarts,
                 'container_ports': container_ports,
+                'start_time': start_time,
+                'running': container_running,
                 'resources': container_resources
             }
             pod_entity['containers'][container_name] = {
                 'image': container_image,
                 'ready': container_ready,
                 'restarts': container_restarts,
+                'start_time': start_time,
+                'running': container_running,
                 'ports': container_ports,
                 'resources': container_resources
             }
 
             container_entity.update(pod_labels)
             container_entity.update(shared_properties)
+            container_entity.update(common_meta)
             entities.append(container_entity)
 
         entities.append(pod_entity)
@@ -433,6 +462,7 @@ def get_cluster_services(
         }
 
         entity.update(entity_labels(obj, 'labels', 'annotations'))
+        entity.update(entity_metadata(obj))
 
         if labels.get('application') == 'spilo':
             # postgres related part
@@ -523,6 +553,7 @@ def get_cluster_nodes(
         }
 
         entity.update(entity_labels(obj, 'labels', 'annotations'))
+        entity.update(entity_metadata(obj))
 
         entities.append(entity)
 
@@ -555,6 +586,7 @@ def get_cluster_namespaces(
         }
 
         entity.update(entity_labels(obj, 'labels', 'annotations'))
+        entity.update(entity_metadata(obj))
 
         entities.append(entity)
 
@@ -596,6 +628,7 @@ def get_cluster_deployments(kube_client, cluster_id, alias, environment, region,
         }
 
         entity.update(entity_labels(obj, 'labels', 'annotations'))
+        entity.update(entity_metadata(obj))
 
         entities.append(entity)
 
@@ -636,6 +669,7 @@ def get_cluster_replicasets(kube_client, cluster_id, alias, environment, region,
         }
 
         entity.update(entity_labels(obj, 'labels', 'annotations'))
+        entity.update(entity_metadata(obj))
 
         entities.append(entity)
 
@@ -687,6 +721,7 @@ def get_cluster_statefulsets(kube_client, cluster_id, alias, environment, region
         }
 
         entity.update(entity_labels(obj, 'labels', 'annotations'))
+        entity.update(entity_metadata(obj))
 
         entities.append(entity)
 
@@ -727,6 +762,7 @@ def get_cluster_daemonsets(kube_client, cluster_id, alias, environment, region, 
         }
 
         entity.update(entity_labels(obj, 'labels', 'annotations'))
+        entity.update(entity_metadata(obj))
 
         entities.append(entity)
 
@@ -762,6 +798,7 @@ def get_cluster_ingresses(kube_client, cluster_id, alias, environment, region, i
         }
 
         entity.update(entity_labels(obj, 'labels'))
+        entity.update(entity_metadata(obj))
 
         entities.append(entity)
 
@@ -808,6 +845,7 @@ def get_cluster_persistentvolumeclaims(kube_client, cluster_id, alias, environme
         entity.update(pv_fields)
 
         entity.update(entity_labels(obj, 'labels', 'annotations'))
+        entity.update(entity_metadata(obj))
 
         entities.append(entity)
 
@@ -847,6 +885,7 @@ def get_cluster_jobs(kube_client, cluster_id, alias, environment, region, infras
         }
 
         entity.update(entity_labels(obj, 'labels'))
+        entity.update(entity_metadata(obj))
 
         entities.append(entity)
 
@@ -888,6 +927,7 @@ def get_cluster_cronjobs(kube_client, cluster_id, alias, environment, region, in
         }
 
         entity.update(entity_labels(obj, 'labels', 'annotations'))
+        entity.update(entity_metadata(obj))
 
         entities.append(entity)
 
@@ -1210,6 +1250,7 @@ def get_cluster_hpas(kube_client, cluster_id, alias, environment, region, infras
         }
 
         entity.update(entity_labels(obj, 'labels', 'annotations'))
+        entity.update(entity_metadata(obj))
 
         entities.append(entity)
 
@@ -1269,5 +1310,6 @@ def get_cluster_awsiamroles(kube_client, cluster_id, alias, environment, region,
             'expiration': obj.get('status', {}).get('expiration', '')
         }
         entity.update(entity_labels(obj, 'labels', 'annotations'))
+        entity.update(entity_metadata(obj))
         entities.append(entity)
     return entities
