@@ -287,11 +287,14 @@ def entity_labels(obj: dict, *sources: str) -> dict:
 def entity_metadata(obj) -> dict:
     """Returns a dict of properties common for all Kubernetes entities"""
     metadata = obj['metadata']
-    return {
-        'namespace': metadata['namespace'],
+    result = {
         'name': metadata['name'],
         'deletion_timestamp': metadata.get('deletionTimestamp')
     }
+    namespace = metadata.get('namespace')
+    if namespace:
+        result['namespace'] = namespace
+    return result
 
 
 @trace(tags={'kubernetes': 'pod'}, pass_span=True)
