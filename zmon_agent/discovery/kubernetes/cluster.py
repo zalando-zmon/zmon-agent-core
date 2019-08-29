@@ -553,6 +553,14 @@ def get_cluster_nodes(
             'node_out_of_disk': statuses.get('OutOfDisk', False),
             'node_memory_pressure': statuses.get('MemoryPressure', False),
             'node_disk_pressure': statuses.get('DiskPressure', False),
+            'node_pid_pressure': statuses.get('PIDPressure', False),
+            'node_readonly_filesystem': statuses.get('ReadonlyFilesystem', False),
+            'node_kernel_deadlock': statuses.get('KernelDeadlock', False),
+            'node_corrupt_docker_overlay': statuses.get('CorruptDockerOverlay2', False),
+            'node_frequent_unregister_net_device': statuses.get('FrequentUnregisterNetDevice', False),
+            'node_frequent_containerd_restart': statuses.get('FrequentContainerdRestart', False),
+            'node_frequent_docker_restart': statuses.get('FrequentDockerRestart', False),
+            'node_frequent_kubelet_restart': statuses.get('FrequentKubeletRestart', False),
         }
 
         entity.update(entity_labels(obj, 'labels', 'annotations'))
