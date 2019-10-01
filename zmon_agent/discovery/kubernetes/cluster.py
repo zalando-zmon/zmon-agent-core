@@ -1005,7 +1005,10 @@ def get_postgresqls(pg_client, cluster_id, alias, environment, region, infrastru
             'namespace': metadata.get('namespace', ''),
             'spec': spec,
             'postgresql_version': spec.get('postgresql', {}).get('version'),
-            'pg_start_time': metadata.get('creationTimestamp')
+            'pg_start_time': metadata.get('creationTimestamp'),
+            'created_by': AGENT_TYPE,
+            'infrastructure_account': infrastructure_account,
+            'account_alias': alias
         }
 
         entities.append(entity)
