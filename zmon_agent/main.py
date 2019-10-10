@@ -23,8 +23,6 @@ from zmon_agent.discovery.kubernetes import get_discovery_agent_class
 
 BUILTIN_DISCOVERY = ('kubernetes',)
 
-AGENT_TYPE = 'zmon-agent'
-
 logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler(stream=sys.stdout))
