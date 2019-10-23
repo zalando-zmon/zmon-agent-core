@@ -1,6 +1,6 @@
 opentracing
 opentracing-utils
-psycopg2
+psycopg2-binary
 pykube>=0.15.0
 requests>=2.12
 scm-source>=1.0.9

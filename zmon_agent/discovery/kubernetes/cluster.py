@@ -1104,7 +1104,8 @@ def get_postgresql_cluster_members(kube_client, cluster_id, alias, environment, 
 
         # TODO: filter in the API call
         labels = obj['metadata'].get('labels', {})
-        if labels.get('application') != 'spilo' or labels.get('version') is None:
+        pod_phase = obj['status']['phase']
+        if labels.get('application') != 'spilo' or labels.get('version') is None or pod_phase != 'Running':
             continue
 
         pod_number = pod.name.split('-')[-1]
