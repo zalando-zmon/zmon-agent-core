@@ -422,7 +422,8 @@ def get_cluster_services(
     endpoints = get_all(kube_client, kube_client.get_endpoints, namespace, span=current_span)
     # number of endpoints per service
     endpoints_map = {e.name: len(e.obj['subsets']) for e in endpoints if e.obj.get('subsets')}
-    config_endpoints_map = {e.name: e.obj['metadata'].get('annotations', {}) for e in endpoints if e.name.endswith('-config')}
+    config_endpoints_map = {e.name: e.obj['metadata'].get('annotations', {}) for e in endpoints
+                            if e.name.endswith('-config')}
 
     services = get_all(kube_client, kube_client.get_services, namespace, span=current_span)
 
@@ -472,7 +473,7 @@ def get_cluster_services(
             'initialize_key': config_endpoints_map.get(service.name, {}).get('initialize', {}),
             'pg_status': status,
             'patroni_history': list(reversed(list(json.loads(str(config_endpoints_map.get(service.name, {})
-                                .get('history', {}))))))[0:10] # Get only last 10 events from the history
+                                    .get('history', {}))))))[0:10]  # Get only last 10 events from the history
         }
 
         entity.update(entity_labels(obj, 'labels', 'annotations'))
