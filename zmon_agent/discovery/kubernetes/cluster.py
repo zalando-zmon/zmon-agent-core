@@ -422,6 +422,7 @@ def get_cluster_services(
     endpoints = get_all(kube_client, kube_client.get_endpoints, namespace, span=current_span)
     # number of endpoints per service
     endpoints_map = {e.name: len(e.obj['subsets']) for e in endpoints if e.obj.get('subsets')}
+    config_endpoints_map = {e.name: e.obj['metadata'].get('annotations', {}) for e in endpoints if e.name.endswith('-config')}
 
     services = get_all(kube_client, kube_client.get_services, namespace, span=current_span)
 
@@ -441,6 +442,12 @@ def get_cluster_services(
         service_namespace = obj['metadata']['namespace']
         labels = obj['metadata'].get('labels', {})
         version = labels.get('version', '')
+        initialize_key = config_endpoints_map.get(service.name, {}).get('initialize', {})
+
+        if len(initialize_key) >= 10 and initialize_key.isdigit():
+            status = 'ready'
+        else:
+            status = 'not ready'
 
         entity = {
             'id': 'service-{}-{}[{}]'.format(service.name, service.namespace, cluster_id),
@@ -461,7 +468,11 @@ def get_cluster_services(
             'service_type': service_type,
             'service_ports': obj['spec'].get('ports', None),  # Could be useful when multiple ports are exposed.
 
-            'endpoints_count': endpoints_map.get(service.name, 0)
+            'endpoints_count': endpoints_map.get(service.name, 0),
+            'initialize_key': config_endpoints_map.get(service.name, {}).get('initialize', {}),
+            'pg_status': status,
+            'patroni_history': list(reversed(list(json.loads(str(config_endpoints_map.get(service.name, {})
+                                .get('history', {}))))))[0:10] # Get only last 10 events from the history
         }
 
         entity.update(entity_labels(obj, 'labels', 'annotations'))
