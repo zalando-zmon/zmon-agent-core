@@ -423,7 +423,7 @@ def get_cluster_services(
     # number of endpoints per service
     endpoints_map = {e.name: len(e.obj['subsets']) for e in endpoints if e.obj.get('subsets')}
     config_endpoints_map = {e.name: e.obj['metadata'].get('annotations', {}) for e in endpoints
-                            if e.name.endswith('-config')}
+                            if e.name.endswith('-config') and e.labels.get('application') == 'spilo'}
 
     services = get_all(kube_client, kube_client.get_services, namespace, span=current_span)
 
@@ -443,12 +443,21 @@ def get_cluster_services(
         service_namespace = obj['metadata']['namespace']
         labels = obj['metadata'].get('labels', {})
         version = labels.get('version', '')
-        initialize_key = config_endpoints_map.get(service.name, {}).get('initialize', {})
+        config_endpoint = config_endpoints_map.get(service.name + '-config', {})
+        initialize_key = config_endpoint.get('initialize')
+        try:
+            history = json.loads(config_endpoint.get('history', ''))
+        except Exception:
+            history = []
 
-        if len(initialize_key) >= 10 and initialize_key.isdigit():
-            status = 'ready'
-        else:
-            status = 'not ready'
+        status = 'unknown'
+        if version == service.name:
+            if initialize_key is None:  # might not be initialized or is failing in the process
+                status = 'not intialized'
+            elif str(initialize_key).isdigit() and len(initialize_key) > 10:  # initialize key is assigned and is valid
+                status = 'initialized'
+            elif len(initialize_key) == 0:  # initialization is in progress and key is not yet assigned
+                status = 'initialization in progress'
 
         entity = {
             'id': 'service-{}-{}[{}]'.format(service.name, service.namespace, cluster_id),
@@ -470,10 +479,8 @@ def get_cluster_services(
             'service_ports': obj['spec'].get('ports', None),  # Could be useful when multiple ports are exposed.
 
             'endpoints_count': endpoints_map.get(service.name, 0),
-            'initialize_key': config_endpoints_map.get(service.name, {}).get('initialize', {}),
-            'pg_status': status,
-            'patroni_history': list(reversed(list(json.loads(str(config_endpoints_map.get(service.name, {})
-                                    .get('history', {}))))))[0:10]  # Get only last 10 events from the history
+            'cluster_status': status,
+            'patroni_history': history[-10:]  # Get latest 10 events from the history
         }
 
         entity.update(entity_labels(obj, 'labels', 'annotations'))
