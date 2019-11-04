@@ -1092,7 +1092,7 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
             'team_id': pg.get('team_id', ''),
             'postgresql_version': pg.get('postgresql_version'),
             'cluster_status': status,
-            'patroni_history': history[-10:]  # Get latest 10 events from the history
+            'cluster_history': history[-10:]  # Get latest 10 events from the history
         }
 
         entities.append(entity)
