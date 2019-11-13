@@ -1026,6 +1026,12 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
 
     services = get_all(kube_client, kube_client.get_services, namespace, span=current_span)
 
+    endpoints = get_all(kube_client, kube_client.get_endpoints, namespace, span=current_span)
+
+    config_endpoints_map = {e.name: e.obj['metadata'].get('annotations', {}) for e in endpoints
+                            if e.name.endswith('-config') and e.labels.get('application') == 'spilo'
+                            and e.labels.get('version') == e.name[:-7]}
+
     for service in services:
         obj = service.obj
 
@@ -1054,6 +1060,21 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
         if postgresql:
             pg = postgresql[0]
 
+        config_endpoint = config_endpoints_map.get(service.name + '-config', {})
+        initialize_key = config_endpoint.get('initialize')
+        try:
+            history = json.loads(config_endpoint.get('history', ''))
+        except Exception:
+            history = []
+
+        status = 'unknown'
+        if initialize_key is None:  # might not be initialized or is failing in the process
+            status = 'not intialized'
+        elif str(initialize_key).isdigit() and len(initialize_key) > 10:  # initialize key is assigned and is valid
+            status = 'initialized'
+        elif len(initialize_key) == 0:  # initialization is in progress and key is not yet assigned
+            status = 'initialization in progress'
+
         entity = {
             'id': 'pg-{}-{}[{}]'.format(service.name, service_namespace, cluster_id),
             'type': POSTGRESQL_CLUSTER_TYPE,
@@ -1081,7 +1102,9 @@ def get_postgresql_clusters(kube_client, cluster_id, alias, environment, region,
             'namespace': service_namespace,
             'spec': pg.get('spec', ''),
             'team_id': pg.get('team_id', ''),
-            'postgresql_version': pg.get('postgresql_version')
+            'postgresql_version': pg.get('postgresql_version'),
+            'cluster_status': status,
+            'cluster_history': history[-10:]  # Get latest 10 events from the history
         }
 
         entities.append(entity)
