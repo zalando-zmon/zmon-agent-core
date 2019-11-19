@@ -289,6 +289,7 @@ def entity_metadata(obj) -> dict:
     metadata = obj['metadata']
     result = {
         'name': metadata['name'],
+        'creation_timestamp': metadata['creationTimestamp'],
         'deletion_timestamp': metadata.get('deletionTimestamp')
     }
     namespace = metadata.get('namespace')
@@ -1324,6 +1325,7 @@ def get_cluster_credential_sets(kube_client, cluster_id, alias, environment, reg
             'tokens': obj.get('status', {}).get('tokens', {})
         }
         entity.update(entity_labels(obj, 'labels', 'annotations'))
+        entity.update(entity_metadata(obj))
         entities.append(entity)
     return entities
 
