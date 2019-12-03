@@ -528,6 +528,7 @@ def get_cluster_nodes(
             'infrastructure_account': infrastructure_account,
             'region': region,
 
+            'provider_id': obj['spec'].get('providerID'),
             'ip': ip,
             'host': host,
             'external_ip': addresses.get('ExternalIP', ''),
