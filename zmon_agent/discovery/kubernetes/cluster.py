@@ -53,7 +53,8 @@ AWSIAMROLE_TYPE = 'kube_awsiamrole'
 
 INSTANCE_TYPE_LABEL = 'beta.kubernetes.io/instance-type'
 
-PROTECTED_FIELDS = {'id', 'type', 'infrastructure_account', 'created_by', 'region', 'team'}
+PROTECTED_FIELDS = {'id', 'type', 'kube_cluster', 'alias', 'environment', 'created_by',
+                    'infrastructure_account', 'region', 'name', 'namespace'}
 
 SERVICE_ACCOUNT_PATH = '/var/run/secrets/kubernetes.io/serviceaccount'
 
