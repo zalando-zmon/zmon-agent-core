@@ -48,8 +48,9 @@ HPA_TYPE = 'kube_hpa'
 
 # Custom Resources
 CREDENTIALSET_TYPE = 'kube_credentialset'
-
 AWSIAMROLE_TYPE = 'kube_awsiamrole'
+STACK_TYPE = 'kube_stack'
+STACKSET_TYPE = 'kube_stackset'
 
 INSTANCE_TYPE_LABEL = 'beta.kubernetes.io/instance-type'
 
@@ -212,6 +213,15 @@ class Discovery:
             self.region, self.infrastructure_account, namespace=self.namespace
         )
 
+        stack_entities = get_cluster_stacks(
+            self.kube_client, self.cluster_id, self.alias, self.environment,
+            self.region, self.infrastructure_account, namespace=self.namespace
+        )
+        stackset_entities = get_cluster_stacksets(
+            self.kube_client, self.cluster_id, self.alias, self.environment,
+            self.region, self.infrastructure_account, namespace=self.namespace
+        )
+
         self.pg_client.invalidate_namespace_cache()
 
         postgresql_entities = []
@@ -248,7 +258,7 @@ class Discovery:
             ingress_entities, job_entities, cronjob_entities, persistentvolumeclaim_entities,
             postgresql_cluster_entities, postgresql_cluster_member_entities,
             postgresql_database_entities, postgresql_entities, hpa_entities,
-            pcs_entities, awsiamrole_entities))
+            pcs_entities, awsiamrole_entities, stack_entities, stackset_entities))
 
 
 @trace()
@@ -1373,6 +1383,80 @@ def get_cluster_awsiamroles(kube_client, cluster_id, alias, environment, region,
             'awsiamrole_namespace': obj['metadata']['namespace'],
             'role_arn': obj.get('status', {}).get('roleARN', ''),
             'expiration': obj.get('status', {}).get('expiration', '')
+        }
+        entity.update(entity_labels(obj, 'labels', 'annotations'))
+        entity.update(entity_metadata(obj))
+        entities.append(entity)
+    return entities
+
+
+@trace(tags={'kubernetes': 'stack'}, pass_span=True)
+def get_cluster_stacks(kube_client, cluster_id, alias, environment, region, infrastructure_account,
+                       namespace=None, **kwargs) -> list:
+    current_span = extract_span_from_kwargs(**kwargs)
+    entities = []
+
+    stacks = get_all(kube_client, kube_client.get_stacks, namespace, span=current_span)
+    for r in stacks:
+        obj = r.obj
+
+        containers = obj['spec']['podTemplate']['spec']['containers']
+        status = obj.get('status', {})
+
+        entity = {
+            'id': 'stack-{}-{}[{}]'.format(r.name, r.namespace, cluster_id),
+            'type': STACK_TYPE,
+            'kube_cluster': cluster_id,
+            'alias': alias,
+            'cluster_environment': environment,
+            'environment': environment,
+            'created_by': AGENT_TYPE,
+            'infrastructure_account': infrastructure_account,
+            'region': region,
+            'stack_name': r.name,
+            'stack_namespace': obj['metadata']['namespace'],
+
+            'containers': {c['name']: c.get('image', '') for c in containers if 'name' in c},
+
+            'replicas': status.get('replicas', 0),
+            'ready_replicas': status.get('readyReplicas', 0),
+            'updated_replicas': status.get('updatedReplicas', 0),
+            'actual_traffic_weight': status.get('actualTrafficWeight', 0.0),
+            'desired_traffic_weight': status.get('desiredTrafficWeight', 0.0),
+        }
+        entity.update(entity_labels(obj, 'labels', 'annotations'))
+        entity.update(entity_metadata(obj))
+        entities.append(entity)
+    return entities
+
+
+@trace(tags={'kubernetes': 'stackset'}, pass_span=True)
+def get_cluster_stacksets(kube_client, cluster_id, alias, environment, region, infrastructure_account,
+                          namespace=None, **kwargs) -> list:
+    current_span = extract_span_from_kwargs(**kwargs)
+    entities = []
+
+    stacksets = get_all(kube_client, kube_client.get_stacksets, namespace, span=current_span)
+    for r in stacksets:
+        obj = r.obj
+        status = obj.get('status', {})
+
+        entity = {
+            'id': 'stackset-{}-{}[{}]'.format(r.name, r.namespace, cluster_id),
+            'type': STACKSET_TYPE,
+            'kube_cluster': cluster_id,
+            'alias': alias,
+            'cluster_environment': environment,
+            'environment': environment,
+            'created_by': AGENT_TYPE,
+            'infrastructure_account': infrastructure_account,
+            'region': region,
+            'stackset_name': r.name,
+            'stackset_namespace': obj['metadata']['namespace'],
+
+            'ready_stacks': status.get('readyStacks', 0),
+            'stacks': status.get('stacks', 0),
+            'stacks_with_traffic': status.get('stacksWithTraffic', 0),
         }
         entity.update(entity_labels(obj, 'labels', 'annotations'))
         entity.update(entity_metadata(obj))

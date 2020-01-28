@@ -6,6 +6,8 @@ import pykube
 from zmon_agent.discovery.kubernetes.crds import (
     PlatformCredentialSet,
     AWSIAMRole,
+    Stack,
+    StackSet,
 )
 
 DEFAULT_SERVICE_ACC = '/var/run/secrets/kubernetes.io/serviceaccount'
@@ -106,3 +108,9 @@ class Client:
 
     def get_awsiamroles(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
         return AWSIAMRole.objects(self.client).filter(namespace=namespace)
+
+    def get_stacks(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
+        return Stack.objects(self.client).filter(namespace=namespace)
+
+    def get_stacksets(self, namespace=DEFAULT_NAMESPACE) -> pykube.query.Query:
+        return StackSet.objects(self.client).filter(namespace=namespace)
