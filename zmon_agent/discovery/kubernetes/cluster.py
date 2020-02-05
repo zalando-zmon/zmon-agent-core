@@ -1403,6 +1403,7 @@ def get_cluster_stacks(kube_client, cluster_id, alias, environment, region, infr
         containers = obj['spec']['podTemplate']['spec']['containers']
         status = obj.get('status', {})
 
+        actual_traffic_weight = status.get('actualTrafficWeight', 0.0)
         entity = {
             'id': 'stack-{}-{}[{}]'.format(r.name, r.namespace, cluster_id),
             'type': STACK_TYPE,
@@ -1421,8 +1422,12 @@ def get_cluster_stacks(kube_client, cluster_id, alias, environment, region, infr
             'replicas': status.get('replicas', 0),
             'ready_replicas': status.get('readyReplicas', 0),
             'updated_replicas': status.get('updatedReplicas', 0),
-            'actual_traffic_weight': status.get('actualTrafficWeight', 0.0),
+            'actual_traffic_weight': actual_traffic_weight,
             'desired_traffic_weight': status.get('desiredTrafficWeight', 0.0),
+
+            # Unfortunately ZMON entity filtering still doesn't support booleans, which is why
+            # we can't use a normal boolean here :(
+            'has_traffic': 'true' if actual_traffic_weight > 0.0 else 'false',
         }
         entity.update(entity_labels(obj, 'labels', 'annotations'))
         entity.update(entity_metadata(obj))
